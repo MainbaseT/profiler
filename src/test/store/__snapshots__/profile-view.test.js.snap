@@ -335,23 +335,7 @@ Object {
           "marker-table",
           "timeline-overview",
         ],
-        "name": "Paint",
-      },
-      Object {
-        "data": Array [
-          Object {
-            "format": "string",
-            "key": "category",
-            "label": "Type",
-            "searchable": true,
-          },
-        ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-          "timeline-overview",
-        ],
-        "name": "Navigation",
+        "name": "tracing",
       },
       Object {
         "data": Array [
@@ -403,12 +387,39 @@ Object {
         "tooltipLabel": "IPC — {marker.data.niceDirection}",
       },
       Object {
+        "data": Array [],
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+          "timeline-overview",
+        ],
+        "name": "VisibleInTimelineOverview",
+      },
+      Object {
         "data": Array [
           Object {
             "format": "string",
-            "key": "name",
-            "label": "Tick Reasons",
+            "key": "searchableString",
+            "label": "Searchable string field",
             "searchable": true,
+          },
+          Object {
+            "format": "unique-string",
+            "key": "searchableUniqueString",
+            "label": "Searchable unique string field",
+            "searchable": true,
+          },
+          Object {
+            "format": "string",
+            "key": "nonSearchableString",
+            "label": "Non-searchable string field",
+            "searchable": false,
+          },
+          Object {
+            "format": "unique-string",
+            "key": "nonSearchableUniqueString",
+            "label": "Non-searchable unique string field",
+            "searchable": false,
           },
         ],
         "display": Array [
@@ -416,14 +427,14 @@ Object {
           "marker-table",
           "timeline-overview",
         ],
-        "name": "RefreshDriverTick",
+        "name": "StringTesting",
       },
     ],
     "misc": "",
     "oscpu": "",
     "physicalCPUs": 0,
     "platform": "",
-    "preprocessedProfileVersion": 48,
+    "preprocessedProfileVersion": 53,
     "processType": 0,
     "product": "Firefox",
     "sourceURL": "",
@@ -431,7 +442,7 @@ Object {
     "startTime": 0,
     "symbolicated": true,
     "toolkit": "",
-    "version": 29,
+    "version": 31,
   },
   "pages": Array [
     Object {
@@ -850,17 +861,6 @@ Object {
         "weightType": "samples",
       },
       "stackTable": Object {
-        "category": Array [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-        ],
         "frame": Array [
           0,
           1,
@@ -884,42 +884,18 @@ Object {
           1,
           7,
         ],
-        "subcategory": Array [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-        ],
       },
-      "stringTable": UniqueStringArray {
-        "_array": Array [
-          "A",
-          "B",
-          "C",
-          "D",
-          "E",
-          "F",
-          "G",
-          "H",
-          "I",
-        ],
-        "_stringToIndex": Map {
-          "A" => 0,
-          "B" => 1,
-          "C" => 2,
-          "D" => 3,
-          "E" => 4,
-          "F" => 5,
-          "G" => 6,
-          "H" => 7,
-          "I" => 8,
-        },
-      },
+      "stringArray": Array [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+      ],
       "tid": 0,
       "unregisterTime": null,
     },
@@ -962,12 +938,24 @@ Object {
           0,
         ],
         "data": Array [
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
+          Object {
+            "type": "A",
+          },
+          Object {
+            "type": "B",
+          },
+          Object {
+            "type": "C",
+          },
+          Object {
+            "type": "D",
+          },
+          Object {
+            "type": "E",
+          },
+          Object {
+            "type": "F",
+          },
           Object {
             "URI": "https://mozilla.org",
             "endTime": 6.5,
@@ -1087,34 +1075,20 @@ Object {
         "weightType": "samples",
       },
       "stackTable": Object {
-        "category": Array [],
         "frame": Array [],
         "length": 0,
         "prefix": Array [],
-        "subcategory": Array [],
       },
-      "stringTable": UniqueStringArray {
-        "_array": Array [
-          "A",
-          "B",
-          "C",
-          "D",
-          "E",
-          "F",
-          "Load 6: https://mozilla.org",
-          "Load 7: https://mozilla.org",
-        ],
-        "_stringToIndex": Map {
-          "A" => 0,
-          "B" => 1,
-          "C" => 2,
-          "D" => 3,
-          "E" => 4,
-          "F" => 5,
-          "Load 6: https://mozilla.org" => 6,
-          "Load 7: https://mozilla.org" => 7,
-        },
-      },
+      "stringArray": Array [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "Load 6: https://mozilla.org",
+        "Load 7: https://mozilla.org",
+      ],
       "tid": 0,
       "unregisterTime": null,
     },
@@ -1532,17 +1506,6 @@ Array [
       "weightType": "samples",
     },
     "stackTable": Object {
-      "category": Array [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-      ],
       "frame": Array [
         0,
         1,
@@ -1566,42 +1529,18 @@ Array [
         1,
         7,
       ],
-      "subcategory": Array [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-      ],
     },
-    "stringTable": UniqueStringArray {
-      "_array": Array [
-        "A",
-        "B",
-        "C",
-        "D",
-        "E",
-        "F",
-        "G",
-        "H",
-        "I",
-      ],
-      "_stringToIndex": Map {
-        "A" => 0,
-        "B" => 1,
-        "C" => 2,
-        "D" => 3,
-        "E" => 4,
-        "F" => 5,
-        "G" => 6,
-        "H" => 7,
-        "I" => 8,
-      },
-    },
+    "stringArray": Array [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+    ],
     "tid": 0,
     "unregisterTime": null,
   },
@@ -1644,12 +1583,24 @@ Array [
         0,
       ],
       "data": Array [
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
+        Object {
+          "type": "A",
+        },
+        Object {
+          "type": "B",
+        },
+        Object {
+          "type": "C",
+        },
+        Object {
+          "type": "D",
+        },
+        Object {
+          "type": "E",
+        },
+        Object {
+          "type": "F",
+        },
         Object {
           "URI": "https://mozilla.org",
           "endTime": 6.5,
@@ -1769,34 +1720,20 @@ Array [
       "weightType": "samples",
     },
     "stackTable": Object {
-      "category": Array [],
       "frame": Array [],
       "length": 0,
       "prefix": Array [],
-      "subcategory": Array [],
     },
-    "stringTable": UniqueStringArray {
-      "_array": Array [
-        "A",
-        "B",
-        "C",
-        "D",
-        "E",
-        "F",
-        "Load 6: https://mozilla.org",
-        "Load 7: https://mozilla.org",
-      ],
-      "_stringToIndex": Map {
-        "A" => 0,
-        "B" => 1,
-        "C" => 2,
-        "D" => 3,
-        "E" => 4,
-        "F" => 5,
-        "Load 6: https://mozilla.org" => 6,
-        "Load 7: https://mozilla.org" => 7,
-      },
-    },
+    "stringArray": Array [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "Load 6: https://mozilla.org",
+      "Load 7: https://mozilla.org",
+    ],
     "tid": 0,
     "unregisterTime": null,
   },
@@ -1807,7 +1744,9 @@ exports[`snapshots of selectors/profile matches the last stored run of markerThr
 Array [
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "D",
+    },
     "end": null,
     "name": "D",
     "start": 3,
@@ -1815,7 +1754,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "E",
+    },
     "end": null,
     "name": "E",
     "start": 4,
@@ -1823,7 +1764,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "F",
+    },
     "end": null,
     "name": "F",
     "start": 5,
@@ -1874,7 +1817,9 @@ exports[`snapshots of selectors/profile matches the last stored run of markerThr
 Array [
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "A",
+    },
     "end": null,
     "name": "A",
     "start": 0,
@@ -1882,7 +1827,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "B",
+    },
     "end": null,
     "name": "B",
     "start": 1,
@@ -1890,7 +1837,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "C",
+    },
     "end": null,
     "name": "C",
     "start": 2,
@@ -1898,7 +1847,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "D",
+    },
     "end": null,
     "name": "D",
     "start": 3,
@@ -1906,7 +1857,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "E",
+    },
     "end": null,
     "name": "E",
     "start": 4,
@@ -1914,7 +1867,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "F",
+    },
     "end": null,
     "name": "F",
     "start": 5,
@@ -1973,9 +1928,6 @@ Array [
       3,
     ],
     "instantOnly": true,
-    "label": Array [
-      "",
-    ],
     "length": 1,
     "name": "D",
     "start": Array [
@@ -1991,9 +1943,6 @@ Array [
       4,
     ],
     "instantOnly": true,
-    "label": Array [
-      "",
-    ],
     "length": 1,
     "name": "E",
     "start": Array [
@@ -2009,9 +1958,6 @@ Array [
       5,
     ],
     "instantOnly": true,
-    "label": Array [
-      "",
-    ],
     "length": 1,
     "name": "F",
     "start": Array [
@@ -2029,10 +1975,6 @@ Array [
       7,
     ],
     "instantOnly": false,
-    "label": Array [
-      "https://mozilla.org",
-      "https://mozilla.org",
-    ],
     "length": 2,
     "name": "Network Requests",
     "start": Array [
@@ -2047,7 +1989,9 @@ exports[`snapshots of selectors/profile matches the last stored run of markerThr
 Array [
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "D",
+    },
     "end": null,
     "name": "D",
     "start": 3,
@@ -2055,7 +1999,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "E",
+    },
     "end": null,
     "name": "E",
     "start": 4,
@@ -2063,7 +2009,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "F",
+    },
     "end": null,
     "name": "F",
     "start": 5,
@@ -3214,6 +3162,7 @@ CallTree {
     0,
   ],
   "_thread": Object {
+    "eTLD+1": undefined,
     "frameTable": Object {
       "address": Array [
         -1,
@@ -3407,7 +3356,11 @@ CallTree {
         -1,
       ],
     },
+    "isJsTracer": undefined,
     "isMainThread": false,
+    "isPrivateBrowsing": undefined,
+    "jsAllocations": undefined,
+    "jsTracer": undefined,
     "markers": Object {
       "category": Array [],
       "data": Array [],
@@ -3418,6 +3371,7 @@ CallTree {
       "startTime": Array [],
     },
     "name": "Thread with samples",
+    "nativeAllocations": undefined,
     "nativeSymbols": Object {
       "address": Array [],
       "functionSize": Array [],
@@ -3427,6 +3381,7 @@ CallTree {
     },
     "pausedRanges": Array [],
     "pid": "0",
+    "processName": undefined,
     "processShutdownTime": null,
     "processStartupTime": 0,
     "processType": "default",
@@ -3442,19 +3397,26 @@ CallTree {
       "eventDelay": Array [
         0,
         0,
+        0,
+        0,
       ],
-      "length": 2,
+      "length": 4,
       "stack": Array [
         6,
         6,
+        6,
+        8,
       ],
       "time": Array [
+        3,
         4,
         5,
+        6,
       ],
       "weight": null,
       "weightType": "samples",
     },
+    "showMarkersInTimeline": undefined,
     "stackTable": Object {
       "category": Array [
         0,
@@ -3502,7 +3464,7 @@ CallTree {
         0,
       ],
     },
-    "stringTable": UniqueStringArray {
+    "stringTable": StringTable {
       "_array": Array [
         "A",
         "B",
@@ -3528,6 +3490,7 @@ CallTree {
     },
     "tid": 0,
     "unregisterTime": null,
+    "userContextId": undefined,
   },
   "_weightType": "samples",
 }
@@ -3535,6 +3498,7 @@ CallTree {
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -3728,7 +3692,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -3739,6 +3707,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -3748,6 +3717,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -3782,6 +3752,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -3829,7 +3800,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -3855,6 +3826,7 @@ Object {
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 
@@ -3940,6 +3912,7 @@ Array [
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getPreviewFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -4133,7 +4106,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -4144,6 +4121,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -4153,6 +4131,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -4181,6 +4160,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -4228,7 +4208,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -4254,11 +4234,13 @@ Object {
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getRangeAndTransformFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -4452,7 +4434,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -4463,6 +4449,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -4472,6 +4459,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -4506,6 +4494,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -4553,7 +4542,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -4579,11 +4568,13 @@ Object {
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getRangeFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -4777,7 +4768,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -4788,6 +4783,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -4797,6 +4793,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -4831,6 +4828,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -4878,7 +4876,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -4904,11 +4902,13 @@ Object {
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getTabFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -5102,7 +5102,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -5113,6 +5117,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -5122,6 +5127,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -5194,6 +5200,7 @@ Object {
       0,
     ],
     "length": 57,
+    "responsiveness": undefined,
     "stack": Array [
       null,
       null,
@@ -5253,6 +5260,8 @@ Object {
       null,
       null,
     ],
+    "threadCPURatio": undefined,
+    "threadId": undefined,
     "time": Array [
       0,
       1,
@@ -5315,6 +5324,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -5362,7 +5372,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -5373,6 +5383,7 @@ Object {
       "G",
       "H",
       "I",
+      "CompositorScreenshot",
     ],
     "_stringToIndex": Map {
       "A" => 0,
@@ -5384,10 +5395,12 @@ Object {
       "G" => 6,
       "H" => 7,
       "I" => 8,
+      "CompositorScreenshot" => 9,
     },
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 

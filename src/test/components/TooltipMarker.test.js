@@ -22,6 +22,7 @@ import { selectedThreadSelectors } from 'firefox-profiler/selectors/per-thread';
 import { getSelectedThreadsKey } from 'firefox-profiler/selectors/url-state';
 import { changeSelectedThreads } from 'firefox-profiler/actions/profile-view';
 import { getEmptyThread } from '../../profile-logic/data-structures';
+import { StringTable } from 'firefox-profiler/utils/string-table';
 import { ensureExists } from 'firefox-profiler/utils/flow';
 import type { NetworkPayload } from 'firefox-profiler/types';
 
@@ -210,6 +211,8 @@ describe('TooltipMarker', function () {
             added_chunks: 50,
             allocated_bytes: 48377856,
             post_heap_size: 38051840,
+            pre_malloc_heap_size: 24188928,
+            post_malloc_heap_size: 12683946,
             major_gc_number: 1,
             max_pause: 74.026,
             minor_gc_number: 16,
@@ -673,7 +676,7 @@ describe('TooltipMarker', function () {
       })
     );
 
-    expect(getValueForProperty('Page')).toBe('Page #1');
+    expect(getValueForProperty('Page')).toBe('https://www.cnn.com/');
   });
 
   it('renders page information for private pages in network markers', () => {
@@ -696,9 +699,158 @@ describe('TooltipMarker', function () {
     );
 
     expect(getValueForProperty('Page')).toBe(
-      'Page #4 (id: 11111111114) (private)'
+      'https://profiler.firefox.com/ (private)'
     );
     expect(getValueForProperty('Private Browsing')).toBe('Yes');
+  });
+
+  it('renders page information for HTTP/1.0 pages in network markers', () => {
+    setupWithPayload(
+      getNetworkMarkers({
+        id: 1235,
+        startTime: 19000,
+        fetchStart: 19200.2,
+        endTime: 20433.8,
+        uri: 'https://example.org/index.html',
+        payload: {
+          cache: 'Hit',
+          pri: 8,
+          count: 47027,
+          contentType: 'text/html',
+          httpVersion: 'http/1.0',
+        },
+      })
+    );
+
+    expect(getValueForProperty('HTTP Version')).toBe('1.0');
+  });
+
+  it('renders page information for HTTP/1.1 pages in network markers', () => {
+    setupWithPayload(
+      getNetworkMarkers({
+        id: 1235,
+        startTime: 19000,
+        fetchStart: 19200.2,
+        endTime: 20433.8,
+        uri: 'https://example.org/index.html',
+        payload: {
+          cache: 'Hit',
+          pri: 8,
+          count: 47027,
+          contentType: 'text/html',
+          httpVersion: 'http/1.1',
+        },
+      })
+    );
+
+    expect(getValueForProperty('HTTP Version')).toBe('1.1');
+  });
+
+  it('renders page information for HTTP/2.0 pages in network markers', () => {
+    setupWithPayload(
+      getNetworkMarkers({
+        id: 1235,
+        startTime: 19000,
+        fetchStart: 19200.2,
+        endTime: 20433.8,
+        uri: 'https://example.org/index.html',
+        payload: {
+          cache: 'Hit',
+          pri: 8,
+          count: 47027,
+          contentType: 'text/html',
+          httpVersion: 'h2',
+        },
+      })
+    );
+
+    expect(getValueForProperty('HTTP Version')).toBe('2');
+  });
+
+  it('renders page information for HTTP/3.0 pages in network markers', () => {
+    setupWithPayload(
+      getNetworkMarkers({
+        id: 1235,
+        startTime: 19000,
+        fetchStart: 19200.2,
+        endTime: 20433.8,
+        uri: 'https://example.org/index.html',
+        payload: {
+          cache: 'Hit',
+          pri: 8,
+          count: 47027,
+          contentType: 'text/html',
+          httpVersion: 'h3',
+        },
+      })
+    );
+
+    expect(getValueForProperty('HTTP Version')).toBe('3');
+  });
+
+  it('renders page information for pages with one class of service flag', () => {
+    setupWithPayload(
+      getNetworkMarkers({
+        id: 1235,
+        startTime: 19000,
+        fetchStart: 19200.2,
+        endTime: 20433.8,
+        uri: 'https://example.org/index.html',
+        payload: {
+          cache: 'Hit',
+          pri: 8,
+          count: 47027,
+          contentType: 'text/html',
+          classOfService: 'Leader',
+        },
+      })
+    );
+
+    expect(getValueForProperty('Class of Service')).toBe('Leader');
+  });
+
+  it('renders page information for pages with multiple class of service flags', () => {
+    setupWithPayload(
+      getNetworkMarkers({
+        id: 1235,
+        startTime: 19000,
+        fetchStart: 19200.2,
+        endTime: 20433.8,
+        uri: 'https://example.org/index.html',
+        payload: {
+          cache: 'Hit',
+          pri: 8,
+          count: 47027,
+          contentType: 'text/html',
+          classOfService: 'Unblocked | Throttleable | TailForbidden',
+        },
+      })
+    );
+
+    expect(getValueForProperty('Class of Service')).toBe(
+      'Unblocked | Throttleable | TailForbidden'
+    );
+  });
+
+  it('renders page information for pages with response status code', () => {
+    setupWithPayload(
+      getNetworkMarkers({
+        id: 1235,
+        startTime: 19000,
+        fetchStart: 19200.2,
+        endTime: 20433.8,
+        uri: 'https://example.org/index.html',
+        payload: {
+          cache: 'Hit',
+          pri: 8,
+          count: 47027,
+          contentType: 'text/html',
+          responseStatus: 403,
+        },
+      })
+    );
+
+    expect(getValueForProperty('Response Status Code')).toBe('403');
   });
 
   it('renders properly network markers with a preconnect part', () => {
@@ -921,9 +1073,10 @@ describe('TooltipMarker', function () {
   it('shows image of CompositorScreenshot markers', function () {
     const { profile } = getProfileFromTextSamples(`A`);
     const thread = profile.threads[0];
+    const stringTable = StringTable.withBackingArray(thread.stringArray);
 
     const screenshotUrl = 'Screenshot Url';
-    const screenshotUrlIndex = thread.stringTable.indexForString(screenshotUrl);
+    const screenshotUrlIndex = stringTable.indexForString(screenshotUrl);
     addMarkersToThreadWithCorrespondingSamples(thread, [
       [
         'CompositorScreenshot',
@@ -1025,8 +1178,10 @@ describe('TooltipMarker', function () {
     ]);
 
     const screenshotUrl = 'Screenshot Url';
-    const screenshotUrlIndex =
-      profile.threads[1].stringTable.indexForString(screenshotUrl);
+    const thread1StringTable = StringTable.withBackingArray(
+      profile.threads[1].stringArray
+    );
+    const screenshotUrlIndex = thread1StringTable.indexForString(screenshotUrl);
     addMarkersToThreadWithCorrespondingSamples(profile.threads[1], [
       [
         'DOMEvent',

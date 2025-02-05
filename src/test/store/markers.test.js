@@ -2,10 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 // @flow
-import {
-  selectedThreadSelectors,
-  getMarkerSchemaByName,
-} from 'firefox-profiler/selectors';
+import { selectedThreadSelectors } from 'firefox-profiler/selectors';
 import { changeTimelineTrackOrganization } from 'firefox-profiler/actions/receive-profile';
 import { unserializeProfileOfArbitraryFormat } from 'firefox-profiler/profile-logic/process-profile';
 import { ensureExists } from 'firefox-profiler/utils/flow';
@@ -118,7 +115,6 @@ describe('selectors/getMarkerChartTimingAndBuckets', function () {
           start: [1],
           end: [1],
           index: [0],
-          label: [''],
           bucket: 'Other',
           instantOnly: true,
           length: 1,
@@ -169,10 +165,6 @@ describe('selectors/getMarkerChartTimingAndBuckets', function () {
           start: [1, 6],
           end: [5, 9],
           index: [0, 1],
-          label: [
-            'https://www.mozilla.org/',
-            'https://www.mozilla.org/image.jpg',
-          ],
           instantOnly: false,
           length: 2,
         },
@@ -192,7 +184,6 @@ describe('selectors/getMarkerChartTimingAndBuckets', function () {
           start: [3],
           end: [3],
           index: [1],
-          label: [''],
           instantOnly: true,
           length: 1,
         },
@@ -202,7 +193,6 @@ describe('selectors/getMarkerChartTimingAndBuckets', function () {
           start: [0],
           end: [1],
           index: [0],
-          label: ['https://mozilla.org'],
           instantOnly: false,
           length: 1,
         },
@@ -234,10 +224,10 @@ describe('memory markers', function () {
 
     return storeWithProfile(
       getProfileWithMarkers([
-        ['DOMEvent', 0, null],
-        ['Navigation', 1, null],
-        ['Paint', 2, null],
-        ['IdleForgetSkippable', 3, 4, { type: 'tracing', category: 'CC' }],
+        ['DOMEvent', 0, null, { type: 'tracing', category: 'JS' }],
+        ['Navigation', 1, null, { type: 'tracing', category: 'Navigation' }],
+        ['Paint', 2, null, { type: 'tracing', category: 'Paint' }],
+        ['IdleForgetSkippable', 3, 4, { type: 'CC' }],
         ['GCMinor', 5, null, { type: 'GCMinor', nursery: any }],
         ['GCMajor', 6, null, { type: 'GCMajor', timings: any }],
         ['GCSlice', 7, null, { type: 'GCSlice', timings: any }],
@@ -284,7 +274,6 @@ describe('selectors/getUserTimingMarkerTiming', function () {
         start: [6],
         end: [6],
         index: [3],
-        label: ['pointInTime'],
         name: 'UserTiming',
         bucket: 'None',
         instantOnly: true,
@@ -294,7 +283,6 @@ describe('selectors/getUserTimingMarkerTiming', function () {
         start: [0],
         end: [10],
         index: [0],
-        label: ['renderFunction'],
         name: 'UserTiming',
         bucket: 'None',
         instantOnly: false,
@@ -304,7 +292,6 @@ describe('selectors/getUserTimingMarkerTiming', function () {
         start: [1],
         end: [9],
         index: [1],
-        label: ['componentA'],
         name: 'UserTiming',
         bucket: 'None',
         instantOnly: false,
@@ -314,7 +301,6 @@ describe('selectors/getUserTimingMarkerTiming', function () {
         start: [2, 7],
         end: [5, 9],
         index: [2, 4],
-        label: ['componentB', 'componentC'],
         name: 'UserTiming',
         bucket: 'None',
         instantOnly: false,
@@ -429,13 +415,12 @@ describe('Marker schema filtering', function () {
     // prettier-ignore
     const profile = getProfileWithMarkers([
       ['no payload',        0, null, null],
-      // $FlowExpectError - Invalid payload by our type system.
       ['payload no schema', 0, null, { type: 'no schema marker' }],
-      ['RefreshDriverTick', 0, null, { type: 'Text', name: 'RefreshDriverTick' }],
+      ['RefreshDriverTick', 0, null, { type: 'Text', name: 'Tick with 1 observer' }],
+      ['VisibleInTimelineOverview', 0, null],
       ['UserTiming',        5, 6,    { type: 'UserTiming', name: 'name', entryType: 'mark' }],
       // The following is a tracing marker without a schema attached, this was a
       // regression reported in Bug 1678698.
-      // $FlowExpectError - Invalid payload by our type system.
       ['RandomTracingMarker', 7, 8,  { type: 'tracing', category: 'RandomTracingMarker' }],
       ...getNetworkMarkers(),
     ]);
@@ -445,15 +430,6 @@ describe('Marker schema filtering', function () {
   function setup(profile) {
     const { getState } = storeWithProfile(profile);
     const getMarker = selectedThreadSelectors.getMarkerGetter(getState());
-    const markerSchemaByName = getMarkerSchemaByName(getState());
-
-    if (markerSchemaByName.RandomTracingMarker) {
-      throw new Error(
-        'This test assumes that the RandomTracingMarker marker has no schema. If this ' +
-          'schema were added somewhere else, then rename RandomTracingMarker to ' +
-          'something else. '
-      );
-    }
 
     function getMarkerNames(selector): string[] {
       return selector(getState())
@@ -472,6 +448,7 @@ describe('Marker schema filtering', function () {
       'no payload',
       'payload no schema',
       'RefreshDriverTick',
+      'VisibleInTimelineOverview',
       'Load 0: https://mozilla.org',
       'UserTiming',
       'RandomTracingMarker',
@@ -486,6 +463,7 @@ describe('Marker schema filtering', function () {
       'no payload',
       'payload no schema',
       'RefreshDriverTick',
+      'VisibleInTimelineOverview',
       'Load 0: https://mozilla.org',
       'UserTiming',
       'RandomTracingMarker',
@@ -677,7 +655,7 @@ describe('Marker schema filtering', function () {
     const { getMarkerNames } = setup(getProfileForMarkerSchema());
     expect(
       getMarkerNames(selectedThreadSelectors.getTimelineOverviewMarkerIndexes)
-    ).toEqual(['RefreshDriverTick']);
+    ).toEqual(['VisibleInTimelineOverview', 'RandomTracingMarker']);
   });
 });
 

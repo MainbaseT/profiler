@@ -58,7 +58,7 @@ export type OwnProps = {|
   +weightType: WeightType,
   +innerWindowIDToPageMap: Map<InnerWindowID, Page> | null,
   +unfilteredThread: Thread,
-  +sampleIndexOffset: number,
+  +ctssSampleIndexOffset: number,
   +maxStackDepthPlusOne: number,
   +flameGraphTiming: FlameGraphTiming,
   +callNodeInfo: CallNodeInfo,
@@ -75,8 +75,8 @@ export type OwnProps = {|
   +interval: Milliseconds,
   +isInverted: boolean,
   +callTreeSummaryStrategy: CallTreeSummaryStrategy,
-  +samples: SamplesLikeTable,
-  +unfilteredSamples: SamplesLikeTable,
+  +ctssSamples: SamplesLikeTable,
+  +unfilteredCtssSamples: SamplesLikeTable,
   +tracedTiming: CallTreeTimings | null,
   +displayImplementation: boolean,
   +displayStackType: boolean,
@@ -360,7 +360,7 @@ class FlameGraphCanvasImpl extends React.PureComponent<Props> {
     const {
       thread,
       unfilteredThread,
-      sampleIndexOffset,
+      ctssSampleIndexOffset,
       flameGraphTiming,
       callTree,
       callNodeInfo,
@@ -370,8 +370,8 @@ class FlameGraphCanvasImpl extends React.PureComponent<Props> {
       callTreeSummaryStrategy,
       innerWindowIDToPageMap,
       weightType,
-      samples,
-      unfilteredSamples,
+      ctssSamples,
+      unfilteredCtssSamples,
       tracedTiming,
       displayImplementation,
       displayStackType,
@@ -382,7 +382,14 @@ class FlameGraphCanvasImpl extends React.PureComponent<Props> {
     }
 
     const stackTiming = flameGraphTiming[depth];
+    if (!stackTiming) {
+      return null;
+    }
     const callNodeIndex = stackTiming.callNode[flameGraphTimingIndex];
+    if (callNodeIndex === undefined) {
+      return null;
+    }
+
     const ratio =
       stackTiming.end[flameGraphTimingIndex] -
       stackTiming.start[flameGraphTimingIndex];
@@ -425,12 +432,11 @@ class FlameGraphCanvasImpl extends React.PureComponent<Props> {
                 callNodeIndex,
                 callNodeInfo,
                 interval,
-                thread,
                 unfilteredThread,
-                sampleIndexOffset,
+                ctssSampleIndexOffset,
                 categories,
-                samples,
-                unfilteredSamples,
+                ctssSamples,
+                unfilteredCtssSamples,
                 displayImplementation
               )
             : undefined

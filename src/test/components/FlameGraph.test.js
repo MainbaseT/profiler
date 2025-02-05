@@ -17,6 +17,7 @@ import {
   getInvertCallstack,
   getSourceViewFile,
 } from '../../selectors/url-state';
+import { StringTable } from '../../utils/string-table';
 import { ensureExists } from '../../utils/flow';
 import {
   getEmptyThread,
@@ -86,6 +87,24 @@ describe('FlameGraph', function () {
     expect(getTooltip()).toBe(null);
     moveMouse(findFillTextPosition('A'));
     expect(getTooltip()).toBeTruthy();
+  });
+
+  it('should not persist the selected frame tooltips', () => {
+    const { getTooltip, moveMouse, findFillTextPosition, leftClick } =
+      setupFlameGraph();
+    // No tooltip displayed yet.
+    expect(getTooltip()).toBe(null);
+
+    leftClick(findFillTextPosition('A'));
+
+    // The tooltip should be displayed.
+    expect(getTooltip()).toBeTruthy();
+
+    // Move the mouse outside of the frame.
+    moveMouse({ x: 0, y: 0 });
+
+    // Make sure that we don't have a persisted tooltip.
+    expect(getTooltip()).toBeFalsy();
   });
 
   it('has a tooltip that matches the snapshot with categories', () => {
@@ -202,6 +221,24 @@ describe('FlameGraph', function () {
     expect(copy).toHaveBeenLastCalledWith('B');
   });
 
+  it('has a tooltip that matches the snapshot with categories when a preview selection is applied', () => {
+    const { getTooltip, moveMouse, findFillTextPosition, dispatch } =
+      setupFlameGraph();
+    flushDrawLog();
+    act(() => {
+      dispatch(
+        updatePreviewSelection({
+          hasSelection: true,
+          isModifying: false,
+          selectionStart: 1.3,
+          selectionEnd: 5,
+        })
+      );
+    });
+    moveMouse(findFillTextPosition('A'));
+    expect(getTooltip()).toMatchSnapshot();
+  });
+
   describe('EmptyReasons', () => {
     it('matches the snapshot when a profile has no samples', () => {
       const profile = getEmptyProfile();
@@ -283,7 +320,8 @@ function setupFlameGraph(addImplementationData: boolean = true) {
 
   // Add some file and line number to the profile so that tooltips generate
   // an interesting snapshot.
-  const { funcTable, stringTable, frameTable } = profile.threads[0];
+  const { funcTable, stringArray, frameTable } = profile.threads[0];
+  const stringTable = StringTable.withBackingArray(stringArray);
   for (let funcIndex = 0; funcIndex < funcTable.length; funcIndex++) {
     funcTable.lineNumber[funcIndex] = funcIndex + 10;
     funcTable.columnNumber[funcIndex] = funcIndex + 100;
@@ -350,6 +388,14 @@ function setupFlameGraph(addImplementationData: boolean = true) {
     fireEvent(canvas, getMouseEvent(eventName, options));
   }
 
+  function leftClick({ x, y }: { x: CssPixels, y: CssPixels }) {
+    const positioningOptions = getPositioningOptions(x, y);
+
+    fireMouseEvent('mousemove', positioningOptions);
+    fireFullClick(canvas, positioningOptions);
+    flushRafCalls();
+  }
+
   // You can use findFillTextPosition to derive the x, y positioning from the
   // draw log.
   function rightClick({ x, y }: { x: CssPixels, y: CssPixels }) {
@@ -401,6 +447,7 @@ function setupFlameGraph(addImplementationData: boolean = true) {
     ...renderResult,
     funcNames,
     moveMouse,
+    leftClick,
     rightClick,
     getTooltip,
     getContentDiv,

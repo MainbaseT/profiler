@@ -7,14 +7,16 @@ import { ReactLocalization } from '@fluent/react';
 import type JSZip from 'jszip';
 import type {
   Profile,
-  Thread,
+  RawThread,
   ThreadIndex,
   Pid,
   TabID,
   IndexIntoCategoryList,
   IndexIntoLibs,
+  PageList,
 } from './profile';
 import type {
+  Thread,
   CallNodePath,
   CallNodeInfo,
   GlobalTrack,
@@ -93,6 +95,8 @@ export type PreviewSelection =
       +isModifying: boolean,
       +selectionStart: number,
       +selectionEnd: number,
+      +draggingStart?: boolean,
+      +draggingEnd?: boolean,
     |};
 
 /**
@@ -380,7 +384,7 @@ type ProfileAction =
 type ReceiveProfileAction =
   | {|
       +type: 'BULK_SYMBOLICATION',
-      +symbolicatedThreads: Thread[],
+      +symbolicatedThreads: RawThread[],
       +oldFuncToNewFuncsMaps: Map<ThreadIndex, FuncToFuncsMap>,
     |}
   | {|
@@ -440,7 +444,11 @@ type ReceiveProfileAction =
   | {| +type: 'WAITING_FOR_PROFILE_FROM_BROWSER' |}
   | {| +type: 'WAITING_FOR_PROFILE_FROM_STORE' |}
   | {| +type: 'WAITING_FOR_PROFILE_FROM_URL', +profileUrl: ?string |}
-  | {| +type: 'TRIGGER_LOADING_FROM_URL', +profileUrl: string |};
+  | {| +type: 'TRIGGER_LOADING_FROM_URL', +profileUrl: string |}
+  | {|
+      +type: 'UPDATE_PAGES',
+      +newPages: PageList,
+    |};
 
 type UrlEnhancerAction =
   | {| +type: 'START_FETCHING_PROFILES' |}
@@ -555,11 +563,28 @@ type UrlStateAction =
       +type: 'TOGGLE_SIDEBAR_OPEN_CATEGORY',
       +kind: string,
       +category: IndexIntoCategoryList,
+    |}
+  | {|
+      +type: 'CHANGE_TAB_FILTER',
+      +tabID: TabID | null,
+      +selectedThreadIndexes: Set<ThreadIndex>,
+      +globalTracks: GlobalTrack[],
+      +globalTrackOrder: TrackIndex[],
+      +hiddenGlobalTracks: Set<TrackIndex>,
+      +localTracksByPid: Map<Pid, LocalTrack[]>,
+      +hiddenLocalTracksByPid: Map<Pid, Set<TrackIndex>>,
+      +localTrackOrderByPid: Map<Pid, TrackIndex[]>,
+      +selectedTab: TabSlug,
     |};
 
+export type IconWithClassName = {| +icon: string, +className: string |};
 type IconsAction =
-  | {| +type: 'ICON_HAS_LOADED', +icon: string |}
-  | {| +type: 'ICON_IN_ERROR', +icon: string |};
+  | {|
+      +type: 'ICON_HAS_LOADED',
+      +iconWithClassName: IconWithClassName,
+    |}
+  | {| +type: 'ICON_IN_ERROR', +icon: string |}
+  | {| +type: 'ICON_BATCH_ADD', icons: IconWithClassName[] |};
 
 type SidebarAction = {|
   +type: 'CHANGE_SIDEBAR_OPEN_STATE',
