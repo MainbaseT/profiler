@@ -17,7 +17,7 @@ import '../res/css/network.css';
 import 'react-splitter-layout/lib/index.css';
 
 import React from 'react';
-import { render } from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import { Root } from './components/app/Root';
 import createStore from './app-logic/create-store';
 import {
@@ -44,18 +44,65 @@ window.geckoProfilerPromise = new Promise(function (resolve) {
   window.connectToGeckoProfiler = resolve;
 });
 
-const store = createStore();
+// We're using an <svg> element from the page to apply filter from CSS rules
+// to be able to dynamically change the color of SVG icons (e.g. to adapt
+// to light/dark/high contrast themes).
+const svgFiltersElement = document.getElementById('svg-filters');
+if (svgFiltersElement) {
+  const defineSvgFiltersForColors = () => {
+    const colors = [
+      '--button-icon-color',
+      '--button-icon-hover-color',
+      '--button-icon-active-color',
+    ];
+    for (const cssVariable of colors) {
+      let filterEl = document.getElementById(cssVariable);
+      if (!filterEl) {
+        svgFiltersElement.insertAdjacentHTML(
+          'beforeend',
+          `<filter id="${cssVariable}" color-interpolation-filters="sRGB">
+            <feFlood />
+            <feComposite operator="in" in2="SourceAlpha" />
+           </filter>`
+        );
+        filterEl = document.getElementById(cssVariable);
+      }
 
-// This uses the React 17 API despite that we use React 18. When moving to the
-// newer API, don't forget to update the tests in
-// src/test/fixtures/testing-library.js.
-render(
-  <Root store={store} />,
+      if (!filterEl) {
+        continue;
+      }
+
+      const feFloodEl = filterEl.querySelector('feFlood');
+
+      if (!feFloodEl) {
+        continue;
+      }
+
+      const color = document.documentElement
+        ? getComputedStyle(document.documentElement).getPropertyValue(
+            cssVariable
+          )
+        : '';
+
+      feFloodEl.setAttribute('flood-color', color);
+    }
+  };
+  defineSvgFiltersForColors();
+
+  const forcedColorsMql = window.matchMedia('(forced-colors: active)');
+  const darkSchemeMql = window.matchMedia('(prefers-color-scheme: dark)');
+  forcedColorsMql.addEventListener('change', defineSvgFiltersForColors);
+  darkSchemeMql.addEventListener('change', defineSvgFiltersForColors);
+}
+
+const store = createStore();
+const root = createRoot(
   ensureExists(
     document.getElementById('root'),
     'Unable to find the DOM element to attach the React element to.'
   )
 );
+root.render(<Root store={store} />);
 
 addDataToWindowObject(store.getState, store.dispatch);
 if (process.env.NODE_ENV === 'production') {

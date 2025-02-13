@@ -144,26 +144,13 @@ export const markerSchemaForTests: MarkerSchema[] = [
     ],
   },
   {
-    // TODO - Note that this marker is a "tracing" marker currently.
-    // See issue #2749
-    name: 'Paint',
+    name: 'tracing',
     display: ['marker-chart', 'marker-table', 'timeline-overview'],
     data: [
       { key: 'category', label: 'Type', format: 'string', searchable: true },
     ],
   },
   {
-    // TODO - Note that this marker is a "tracing" marker currently.
-    // See issue #2749
-    name: 'Navigation',
-    display: ['marker-chart', 'marker-table', 'timeline-overview'],
-    data: [
-      { key: 'category', label: 'Type', format: 'string', searchable: true },
-    ],
-  },
-  {
-    // TODO - Note that this marker is a "tracing" marker currently.
-    // See issue #2749
     name: 'Layout',
     display: ['marker-chart', 'marker-table', 'timeline-overview'],
     data: [
@@ -185,14 +172,50 @@ export const markerSchemaForTests: MarkerSchema[] = [
     ],
   },
   {
-    name: 'RefreshDriverTick',
+    name: 'VisibleInTimelineOverview',
+    display: ['marker-chart', 'marker-table', 'timeline-overview'],
+    data: [],
+  },
+  {
+    name: 'StringTesting',
     display: ['marker-chart', 'marker-table', 'timeline-overview'],
     data: [
       {
-        key: 'name',
-        label: 'Tick Reasons',
+        key: 'searchableString',
+        label: 'Searchable string field',
         format: 'string',
         searchable: true,
+      },
+      {
+        key: 'searchableUniqueString',
+        label: 'Searchable unique string field',
+        format: 'unique-string',
+        searchable: true,
+      },
+      {
+        key: 'nonSearchableString',
+        label: 'Non-searchable string field',
+        format: 'string',
+        searchable: false,
+      },
+      {
+        key: 'nonSearchableUniqueString',
+        label: 'Non-searchable unique string field',
+        format: 'unique-string',
+        searchable: false,
+      },
+    ],
+  },
+  {
+    name: 'MarkerWithHiddenField',
+    display: ['marker-chart', 'marker-table', 'timeline-overview'],
+    data: [
+      {
+        key: 'hiddenString',
+        label: 'Hidden string',
+        format: 'string',
+        searchable: true,
+        hidden: true,
       },
     ],
   },

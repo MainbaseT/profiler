@@ -25,6 +25,7 @@ import {
   calculateFunctionSizeLowerBound,
   getNativeSymbolsForCallNode,
   getNativeSymbolInfo,
+  computeTimeColumnForRawSamplesTable,
 } from '../../profile-logic/profile-data';
 import { resourceTypes } from '../../profile-logic/data-structures';
 import {
@@ -32,7 +33,7 @@ import {
   createGeckoProfileWithJsTimings,
   createGeckoSubprocessProfile,
 } from '.././fixtures/profiles/gecko-profile';
-import { UniqueStringArray } from '../../utils/unique-string-array';
+import { StringTable } from '../../utils/string-table';
 import { FakeSymbolStore } from '../fixtures/fake-symbol-store';
 import { sortDataTable } from '../../utils/data-table-utils';
 import { ensureExists } from '../../utils/flow';
@@ -40,6 +41,7 @@ import getCallNodeProfile from '../fixtures/profiles/call-nodes';
 import {
   getProfileFromTextSamples,
   getJsTracerTable,
+  getProfileWithDicts,
 } from '../fixtures/profiles/processed-profile';
 import {
   funcHasDirectRecursiveCall,
@@ -48,8 +50,8 @@ import {
 
 import type { Thread, IndexIntoStackTable } from 'firefox-profiler/types';
 
-describe('unique-string-array', function () {
-  const u = new UniqueStringArray(['foo', 'bar', 'baz']);
+describe('string-table', function () {
+  const u = StringTable.withBackingArray(['foo', 'bar', 'baz']);
 
   it('should return the right strings', function () {
     expect(u.getString(0)).toEqual('foo');
@@ -147,7 +149,7 @@ describe('process-profile', function () {
         expect('stackTable' in thread).toBeTruthy();
         expect('frameTable' in thread).toBeTruthy();
         expect('markers' in thread).toBeTruthy();
-        expect('stringTable' in thread).toBeTruthy();
+        expect('stringArray' in thread).toBeTruthy();
         expect('funcTable' in thread).toBeTruthy();
         expect('resourceTable' in thread).toBeTruthy();
       }
@@ -176,13 +178,16 @@ describe('process-profile', function () {
       // Should be Content, but modified by workaround for bug 1322471.
       expect(thread2.name).toEqual('GeckoMain');
 
-      expect(thread0.samples.time[0]).toEqual(0);
-      expect(thread0.samples.time[1]).toEqual(1);
+      const sampleTimes0 = computeTimeColumnForRawSamplesTable(thread0.samples);
+      const sampleTimes2 = computeTimeColumnForRawSamplesTable(thread2.samples);
+
+      expect(sampleTimes0[0]).toEqual(0);
+      expect(sampleTimes0[1]).toEqual(1);
 
       // 1 second later than the same samples in the main process because the
       // content process' start time is 1s later.
-      expect(thread2.samples.time[0]).toEqual(1000);
-      expect(thread2.samples.time[1]).toEqual(1001);
+      expect(sampleTimes2[0]).toEqual(1000);
+      expect(sampleTimes2[1]).toEqual(1001);
 
       // Now about markers
       expect(thread0.markers.endTime[0]).toEqual(1);
@@ -240,16 +245,14 @@ describe('process-profile', function () {
       expect(thread.funcTable.name[1]).toEqual(1);
       expect(thread.funcTable.name[2]).toEqual(2);
       expect(thread.funcTable.name[3]).toEqual(3);
-      expect(thread.stringTable.getString(thread.funcTable.name[4])).toEqual(
+      expect(thread.stringArray[thread.funcTable.name[4]]).toEqual(
         'frobnicate'
       );
       const chromeStringIndex = thread.funcTable.fileName[4];
       if (typeof chromeStringIndex !== 'number') {
         throw new Error('chromeStringIndex must be a number');
       }
-      expect(thread.stringTable.getString(chromeStringIndex)).toEqual(
-        'chrome://blargh'
-      );
+      expect(thread.stringArray[chromeStringIndex]).toEqual('chrome://blargh');
       expect(thread.funcTable.lineNumber[4]).toEqual(34);
       expect(thread.funcTable.columnNumber[4]).toEqual(35);
     });
@@ -298,11 +301,11 @@ describe('process-profile', function () {
       expect(thread.resourceTable.type[1]).toEqual(resourceTypes.library);
       expect(thread.resourceTable.type[2]).toEqual(resourceTypes.url);
       const [name0, name1, name2] = thread.resourceTable.name;
-      expect(thread.stringTable.getString(name0)).toEqual(
+      expect(thread.stringArray[name0]).toEqual(
         'Extension "Form Autofill" (ID: formautofill@mozilla.org)'
       );
-      expect(thread.stringTable.getString(name1)).toEqual('firefox');
-      expect(thread.stringTable.getString(name2)).toEqual('chrome://blargh');
+      expect(thread.stringArray[name1]).toEqual('firefox');
+      expect(thread.stringArray[name2]).toEqual('chrome://blargh');
     });
   });
 
@@ -321,14 +324,15 @@ describe('process-profile', function () {
         // from the parent process.
         const geckoSubprocess = createGeckoSubprocessProfile(geckoProfile);
         const childProcessThread = geckoSubprocess.threads[0];
-        const stringTable = new UniqueStringArray();
+        const jsTracerDictionary = [];
+        const stringTable = StringTable.withBackingArray(jsTracerDictionary);
         const jsTracer = getJsTracerTable(stringTable, [
           ['jsTracerA', 0, 10],
           ['jsTracerB', 1, 9],
           ['jsTracerC', 2, 8],
         ]);
         childProcessThread.jsTracerEvents = jsTracer;
-        geckoSubprocess.jsTracerDictionary = stringTable._array;
+        geckoSubprocess.jsTracerDictionary = jsTracerDictionary;
         geckoSubprocess.meta.startTime += timestampOffsetMs;
         // Update the timestampOffset taking into account the subprocess offset
         timestampOffsetMs =
@@ -351,8 +355,8 @@ describe('process-profile', function () {
 
       // Check that the values are correct from the test defined data.
       expect(
-        processedJsTracer.events.map((index) =>
-          childProcessThread.stringTable.getString(index)
+        processedJsTracer.events.map(
+          (index) => childProcessThread.stringArray[index]
         )
       ).toEqual(['jsTracerA', 'jsTracerB', 'jsTracerC']);
       expect(processedJsTracer.durations).toEqual([10000, 8000, 6000]);
@@ -439,11 +443,8 @@ describe('process-profile', function () {
 describe('profile-data', function () {
   describe('createCallNodeTableAndFixupSamples', function () {
     const profile = processGeckoProfile(createGeckoProfile());
-    const defaultCategory = ensureExists(
-      profile.meta.categories,
-      'Expected to find categories'
-    ).findIndex((c) => c.name === 'Other');
-    const thread = profile.threads[0];
+    const { derivedThreads, defaultCategory } = getProfileWithDicts(profile);
+    const [thread] = derivedThreads;
     const callNodeInfo = getCallNodeInfo(
       thread.stackTable,
       thread.frameTable,
@@ -491,14 +492,9 @@ describe('profile-data', function () {
   }
 
   describe('getCallNodeInfo', function () {
-    const {
-      meta,
-      threads: [thread],
-    } = getCallNodeProfile();
-    const defaultCategory = ensureExists(
-      meta.categories,
-      'Expected to find categories'
-    ).findIndex((c) => c.name === 'Other');
+    const profile = getCallNodeProfile();
+    const { derivedThreads, defaultCategory } = getProfileWithDicts(profile);
+    const [thread] = derivedThreads;
     const callNodeInfo = getCallNodeInfo(
       thread.stackTable,
       thread.frameTable,
@@ -572,6 +568,106 @@ describe('profile-data', function () {
       expect(mergedFuncListB).toEqual([0, 1, 2, 3, 5]);
       expect(callNodeTable.length).toEqual(6);
     });
+  });
+});
+
+describe('getInvertedCallNodeInfo', function () {
+  function setup(plaintextSamples) {
+    const { derivedThreads, funcNamesDictPerThread, defaultCategory } =
+      getProfileFromTextSamples(plaintextSamples);
+
+    const [thread] = derivedThreads;
+    const [funcNamesDict] = funcNamesDictPerThread;
+    const nonInvertedCallNodeInfo = getCallNodeInfo(
+      thread.stackTable,
+      thread.frameTable,
+      thread.funcTable,
+      defaultCategory
+    );
+
+    const invertedCallNodeInfo = getInvertedCallNodeInfo(
+      nonInvertedCallNodeInfo.getNonInvertedCallNodeTable(),
+      nonInvertedCallNodeInfo.getStackIndexToNonInvertedCallNodeIndex(),
+      defaultCategory,
+      thread.funcTable.length
+    );
+
+    // This function is used to test `getSuffixOrderIndexRangeForCallNode` and
+    // `getSuffixOrderedCallNodes`. To find the non-inverted call nodes with
+    // a call path suffix, `nodesWithSuffix` gets the inverted node X for the
+    // given call path suffix, and lists non-inverted nodes in X's "suffix
+    // order index range".
+    // These are the nodes whose call paths, if inverted, would correspond to
+    // inverted call nodes that are descendants of X.
+    function nodesWithSuffix(callPathSuffix) {
+      const invertedNodeForSuffix = ensureExists(
+        invertedCallNodeInfo.getCallNodeIndexFromPath(
+          [...callPathSuffix].reverse()
+        )
+      );
+      const [rangeStart, rangeEnd] =
+        invertedCallNodeInfo.getSuffixOrderIndexRangeForCallNode(
+          invertedNodeForSuffix
+        );
+      const suffixOrderedCallNodes =
+        invertedCallNodeInfo.getSuffixOrderedCallNodes();
+      const nonInvertedCallNodes = new Set();
+      for (let i = rangeStart; i < rangeEnd; i++) {
+        nonInvertedCallNodes.add(suffixOrderedCallNodes[i]);
+      }
+      return nonInvertedCallNodes;
+    }
+
+    return {
+      funcNamesDict,
+      nonInvertedCallNodeInfo,
+      invertedCallNodeInfo,
+      nodesWithSuffix,
+    };
+  }
+
+  it('creates a correct suffix order for this example profile', function () {
+    const {
+      funcNamesDict: { A, B, C },
+      nonInvertedCallNodeInfo,
+      nodesWithSuffix,
+    } = setup(`
+      A  A  A  A  A  A  A
+         B  B  B  A  A  C
+            A  C     B
+    `);
+
+    const cnA = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([A]);
+    const cnAB = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([A, B]);
+    const cnABA = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([A, B, A]);
+    const cnABC = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([A, B, C]);
+    const cnAA = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([A, A]);
+    const cnAAB = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([A, A, B]);
+    const cnAC = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([A, C]);
+
+    expect(nodesWithSuffix([A])).toEqual(new Set([cnA, cnABA, cnAA]));
+    expect(nodesWithSuffix([B])).toEqual(new Set([cnAB, cnAAB]));
+    expect(nodesWithSuffix([A, B])).toEqual(new Set([cnAB, cnAAB]));
+    expect(nodesWithSuffix([A, A, B])).toEqual(new Set([cnAAB]));
+    expect(nodesWithSuffix([C])).toEqual(new Set([cnABC, cnAC]));
+  });
+
+  it('creates a correct suffix order for a different example profile', function () {
+    const {
+      funcNamesDict: { A, B, C },
+      nonInvertedCallNodeInfo,
+      nodesWithSuffix,
+    } = setup(`
+      A  A  A  C
+         B  B
+            C
+    `);
+
+    const cnABC = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([A, B, C]);
+    const cnC = nonInvertedCallNodeInfo.getCallNodeIndexFromPath([C]);
+
+    expect(nodesWithSuffix([B, C])).toEqual(new Set([cnABC]));
+    expect(nodesWithSuffix([C])).toEqual(new Set([cnABC, cnC]));
   });
 });
 
@@ -687,7 +783,7 @@ describe('symbolication', function () {
       function functionNameForFrameInThread(thread, frameIndex) {
         const funcIndex = thread.frameTable.func[frameIndex];
         const funcNameStringIndex = thread.funcTable.name[funcIndex];
-        return thread.stringTable.getString(funcNameStringIndex);
+        return thread.stringArray[funcNameStringIndex];
       }
       if (!unsymbolicatedProfile || !symbolicatedProfile) {
         throw new Error('Profiles cannot be null');
@@ -714,7 +810,8 @@ describe('symbolication', function () {
 
 describe('filter-by-implementation', function () {
   const profile = processGeckoProfile(createGeckoProfileWithJsTimings());
-  const thread = profile.threads[0];
+  const { derivedThreads } = getProfileWithDicts(profile);
+  const [thread] = derivedThreads;
 
   function stackIsJS(filteredThread, stackIndex) {
     if (stackIndex === null) {
@@ -758,10 +855,10 @@ describe('filter-by-implementation', function () {
 
 describe('get-sample-index-closest-to-time', function () {
   it('returns the correct sample index for a provided time', function () {
-    const { profile } = getProfileFromTextSamples(
+    const { profile, derivedThreads } = getProfileFromTextSamples(
       Array(10).fill('A').join('  ')
     );
-    const thread = profile.threads[0];
+    const [thread] = derivedThreads;
     const { samples } = filterThreadByImplementation(thread, 'js');
 
     const interval = profile.meta.interval;
@@ -777,27 +874,24 @@ describe('get-sample-index-closest-to-time', function () {
 describe('funcHasDirectRecursiveCall and funcHasRecursiveCall', function () {
   function setup(textSamples) {
     const {
-      profile,
+      derivedThreads,
       funcNamesPerThread: [funcNames],
+      defaultCategory,
     } = getProfileFromTextSamples(textSamples);
-    const [thread] = profile.threads;
-    const defaultCategory = ensureExists(
-      profile.meta.categories,
-      'Expected to find categories'
-    ).findIndex((c) => c.name === 'Other');
+    const [thread] = derivedThreads;
     const callNodeTable = getCallNodeInfo(
       thread.stackTable,
       thread.frameTable,
       thread.funcTable,
       defaultCategory
-    ).getCallNodeTable();
+    ).getNonInvertedCallNodeTable();
     const jsOnlyThread = filterThreadByImplementation(thread, 'js');
     const jsOnlyCallNodeTable = getCallNodeInfo(
       jsOnlyThread.stackTable,
       jsOnlyThread.frameTable,
       jsOnlyThread.funcTable,
       defaultCategory
-    ).getCallNodeTable();
+    ).getNonInvertedCallNodeTable();
     return { callNodeTable, jsOnlyCallNodeTable, funcNames };
   }
 
@@ -842,9 +936,9 @@ describe('funcHasDirectRecursiveCall and funcHasRecursiveCall', function () {
 
 describe('convertStackToCallNodeAndCategoryPath', function () {
   it('correctly returns a call node path for a stack', function () {
-    const {
-      threads: [thread],
-    } = getCallNodeProfile();
+    const profile = getCallNodeProfile();
+    const { derivedThreads } = getProfileWithDicts(profile);
+    const [thread] = derivedThreads;
     const stack1 = thread.samples.stack[0];
     const stack2 = thread.samples.stack[1];
     if (stack1 === null || stack2 === null) {
@@ -859,213 +953,438 @@ describe('convertStackToCallNodeAndCategoryPath', function () {
 });
 
 describe('getSamplesSelectedStates', function () {
-  const {
-    profile,
-    funcNamesDictPerThread: [{ A, B, D, E, F }],
-  } = getProfileFromTextSamples(`
-     A  A  A  A  A
-     B  D  B  D  D
-     C  E  F  G
-  `);
-  const thread = profile.threads[0];
-  const callNodeInfo = getCallNodeInfo(
-    thread.stackTable,
-    thread.frameTable,
-    thread.funcTable,
-    0
-  );
-  const stackIndexToCallNodeIndex =
-    callNodeInfo.getStackIndexToNonInvertedCallNodeIndex();
-  const sampleCallNodes = getSampleIndexToCallNodeIndex(
-    thread.samples.stack,
-    stackIndexToCallNodeIndex
-  );
+  function setup(textSamples) {
+    const {
+      derivedThreads,
+      funcNamesDictPerThread: [funcNamesDict],
+      defaultCategory,
+    } = getProfileFromTextSamples(textSamples);
+    const [thread] = derivedThreads;
+    const callNodeInfo = getCallNodeInfo(
+      thread.stackTable,
+      thread.frameTable,
+      thread.funcTable,
+      0
+    );
+    const stackIndexToCallNodeIndex =
+      callNodeInfo.getStackIndexToNonInvertedCallNodeIndex();
+    const sampleCallNodes = getSampleIndexToCallNodeIndex(
+      thread.samples.stack,
+      stackIndexToCallNodeIndex
+    );
 
-  const A_B = callNodeInfo.getCallNodeIndexFromPath([A, B]);
-  const A_B_F = callNodeInfo.getCallNodeIndexFromPath([A, B, F]);
-  const A_D = callNodeInfo.getCallNodeIndexFromPath([A, D]);
-  const A_D_E = callNodeInfo.getCallNodeIndexFromPath([A, D, E]);
+    const callNodeInfoInverted = getInvertedCallNodeInfo(
+      callNodeInfo.getNonInvertedCallNodeTable(),
+      stackIndexToCallNodeIndex,
+      defaultCategory,
+      thread.funcTable.length
+    );
 
-  it('determines the selection status of all the samples', function () {
-    expect(
-      getSamplesSelectedStates(
-        callNodeInfo,
-        sampleCallNodes,
-        sampleCallNodes,
-        A_B
-      )
-    ).toEqual([
-      'SELECTED',
-      'UNSELECTED_ORDERED_AFTER_SELECTED',
-      'SELECTED',
-      'UNSELECTED_ORDERED_AFTER_SELECTED',
-      'UNSELECTED_ORDERED_AFTER_SELECTED',
-    ]);
-    expect(
-      getSamplesSelectedStates(
-        callNodeInfo,
-        sampleCallNodes,
-        sampleCallNodes,
-        A_D
-      )
-    ).toEqual([
-      'UNSELECTED_ORDERED_BEFORE_SELECTED',
-      'SELECTED',
-      'UNSELECTED_ORDERED_BEFORE_SELECTED',
-      'SELECTED',
-      'SELECTED',
-    ]);
-    expect(
-      getSamplesSelectedStates(
-        callNodeInfo,
-        sampleCallNodes,
-        sampleCallNodes,
-        A_B_F
-      )
-    ).toEqual([
-      'UNSELECTED_ORDERED_BEFORE_SELECTED',
-      'UNSELECTED_ORDERED_AFTER_SELECTED',
-      'SELECTED',
-      'UNSELECTED_ORDERED_AFTER_SELECTED',
-      'UNSELECTED_ORDERED_AFTER_SELECTED',
-    ]);
-    expect(
-      getSamplesSelectedStates(
-        callNodeInfo,
-        sampleCallNodes,
-        sampleCallNodes,
-        A_D_E
-      )
-    ).toEqual([
-      'UNSELECTED_ORDERED_BEFORE_SELECTED',
-      'SELECTED',
-      'UNSELECTED_ORDERED_BEFORE_SELECTED',
-      'UNSELECTED_ORDERED_AFTER_SELECTED',
-      'UNSELECTED_ORDERED_BEFORE_SELECTED',
-    ]);
+    return {
+      callNodeInfo,
+      callNodeInfoInverted,
+      sampleCallNodes,
+      funcNamesDict,
+    };
+  }
+
+  describe('non-inverted', function () {
+    const {
+      callNodeInfo,
+      sampleCallNodes,
+      funcNamesDict: { A, B, D, E, F },
+    } = setup(`
+      A  A  A  A  A
+      B  D  B  D  D
+      C  E  F  G
+    `);
+
+    const A_B = callNodeInfo.getCallNodeIndexFromPath([A, B]);
+    const A_B_F = callNodeInfo.getCallNodeIndexFromPath([A, B, F]);
+    const A_D = callNodeInfo.getCallNodeIndexFromPath([A, D]);
+    const A_D_E = callNodeInfo.getCallNodeIndexFromPath([A, D, E]);
+
+    it('determines the selection status of all the samples', function () {
+      expect(
+        getSamplesSelectedStates(
+          callNodeInfo,
+          sampleCallNodes,
+          sampleCallNodes,
+          A_B
+        )
+      ).toEqual([
+        'SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+      ]);
+      expect(
+        getSamplesSelectedStates(
+          callNodeInfo,
+          sampleCallNodes,
+          sampleCallNodes,
+          A_D
+        )
+      ).toEqual([
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'SELECTED',
+        'SELECTED',
+      ]);
+      expect(
+        getSamplesSelectedStates(
+          callNodeInfo,
+          sampleCallNodes,
+          sampleCallNodes,
+          A_B_F
+        )
+      ).toEqual([
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+      ]);
+      expect(
+        getSamplesSelectedStates(
+          callNodeInfo,
+          sampleCallNodes,
+          sampleCallNodes,
+          A_D_E
+        )
+      ).toEqual([
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+      ]);
+    });
+
+    it('can sort the samples based on their selection status', function () {
+      const comparator = getTreeOrderComparator(sampleCallNodes, callNodeInfo);
+      const samples = [4, 1, 3, 0, 2]; // some random order
+      samples.sort(comparator);
+      expect(samples).toEqual([0, 2, 4, 1, 3]);
+      expect(comparator(0, 0)).toBe(0);
+      expect(comparator(1, 1)).toBe(0);
+      expect(comparator(4, 4)).toBe(0);
+      expect(comparator(0, 2)).toBeLessThan(0);
+      expect(comparator(2, 0)).toBeGreaterThan(0);
+    });
   });
 
-  it('can sort the samples based on their selection status', function () {
-    const comparator = getTreeOrderComparator(sampleCallNodes);
-    const samples = [4, 1, 3, 0, 2]; // some random order
-    samples.sort(comparator);
-    expect(samples).toEqual([0, 2, 4, 1, 3]);
-    expect(comparator(0, 0)).toBe(0);
-    expect(comparator(1, 1)).toBe(0);
-    expect(comparator(4, 4)).toBe(0);
-    expect(comparator(0, 2)).toBeLessThan(0);
-    expect(comparator(2, 0)).toBeGreaterThan(0);
+  describe('inverted', function () {
+    /**
+     * - [cn0] A      =  A            =            A [so0]    [so0] [cn0] A
+     *   - [cn1] B    =  A -> B       =       A -> B [so3]    [so1] [cn4] A <- A
+     *     - [cn2] A  =  A -> B -> A  =  A -> B -> A [so2] ↘↗ [so2] [cn2] A <- B <- A
+     *     - [cn3] C  =  A -> B -> C  =  A -> B -> C [so6] ↗↘ [so3] [cn1] B <- A
+     *   - [cn4] A    =  A -> A       =       A -> A [so1]    [so4] [cn5] B <- A <- A
+     *     - [cn5] B  =  A -> A -> B  =  A -> A -> B [so4]    [so5] [cn6] C <- A
+     *   - [cn6] C    =  A -> C       =       A -> C [so5]    [so6] [cn3] C <- B <- A
+     *
+     *                                                 Represents call paths ending in
+     * - [in0] A  (so:0..3)        =  A             =            ... A (cn0, cn4, cn2)
+     *   - [in1] A  (so:1..2)      =  A <- A        =       ... A -> A (cn4)
+     *   - [in2] B  (so:2..3)      =  A <- B        =       ... B -> A (cn2)
+     *     - [in3] A  (so:2..3)    =  A <- B <- A   =  ... A -> B -> A (cn2)
+     *  - [in4] B  (so:3..5)       =  B             =            ... B (cn1, cn5)
+     *    - [in5] A  (so:3..5)     =  B <- A        =       ... A -> B (cn1, cn5)
+     *      - [in6] A  (so:4..5)   =  B <- A <- A   =  ... A -> A -> B (cn5)
+     *  - [in7] C  (so:5..7)       =  C             =            ... C (cn6, cn3)
+     *    - [in8] A  (so:5..6)     =  C <- A        =       ... A -> C (cn6)
+     *    - [in9] B  (so:6..7)     =  C <- B        =       ... B -> C (cn3)
+     *      - [in10] A  (so:6..7)  =  C <- B <- A   =  ... A -> B -> C (cn3)
+     *  */
+    const {
+      callNodeInfoInverted,
+      sampleCallNodes,
+      funcNamesDict: { A, B, C },
+    } = setup(`
+      A  A  A  A  A  A  A
+         A  B  B  C  B  A
+               A     C  B
+    `);
+
+    const inBA = callNodeInfoInverted.getCallNodeIndexFromPath([B, A]);
+    const inCBA = callNodeInfoInverted.getCallNodeIndexFromPath([C, B, A]);
+    const inB = callNodeInfoInverted.getCallNodeIndexFromPath([B]);
+
+    //   0  1  2  3  4  5  6
+    //   A  A  A  A  A  A  A
+    //      A  B  B  C  B  A
+    //            A     C  B
+
+    it('determines the selection status of all the samples', function () {
+      // Test B <- A <- ...
+      // Only samples 2 and 6 have stacks ending in ... -> A -> B
+      expect(
+        getSamplesSelectedStates(
+          callNodeInfoInverted,
+          sampleCallNodes,
+          sampleCallNodes,
+          inBA
+        )
+      ).toEqual([
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'SELECTED',
+      ]);
+      // Test C <- B <- A <- ...
+      // Only sample 5 has a stack ending in ... -> A -> B -> C
+      expect(
+        getSamplesSelectedStates(
+          callNodeInfoInverted,
+          sampleCallNodes,
+          sampleCallNodes,
+          inCBA
+        )
+      ).toEqual([
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+      ]);
+      // Test B <- ...
+      // Only samples 2 and 6 have stacks ending in ... -> B
+      expect(
+        getSamplesSelectedStates(
+          callNodeInfoInverted,
+          sampleCallNodes,
+          sampleCallNodes,
+          inB
+        )
+      ).toEqual([
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'SELECTED',
+        'UNSELECTED_ORDERED_BEFORE_SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'UNSELECTED_ORDERED_AFTER_SELECTED',
+        'SELECTED',
+      ]);
+    });
+
+    it('can sort the samples based on their selection status', function () {
+      const comparator = getTreeOrderComparator(
+        sampleCallNodes,
+        callNodeInfoInverted
+      );
+
+      /**
+       * in original order:
+       *   0  1  2  3  4  5  6
+       *   A  A  A  A  A  A  A
+       *      A  B  B  C  B  A
+       *            A     C  B
+       *
+       * in suffix order:
+       *         A     A     A
+       *      A  B  A  A  A  B
+       *   A  A  A  B  B  C  C
+       *   0  1  3  2  6  4  5
+       */
+
+      // A should come before A <- B.
+      expect(comparator(0, 2)).toBeLessThan(0);
+      expect(comparator(2, 0)).toBeGreaterThan(0);
+
+      // A <- A should come before A <- B.
+      expect(comparator(1, 2)).toBeLessThan(0);
+      expect(comparator(2, 1)).toBeGreaterThan(0);
+
+      // Sort a random order of samples, make sure it's correct.
+      const samples = [5, 6, 0, 1, 2, 3, 4];
+      samples.sort(comparator);
+      expect(samples).toEqual([0, 1, 3, 2, 6, 4, 5]);
+
+      // The same sample index should always compare equally.
+      expect(comparator(0, 0)).toBe(0);
+      expect(comparator(1, 1)).toBe(0);
+      expect(comparator(4, 4)).toBe(0);
+    });
   });
 });
 
 describe('extractProfileFilterPageData', function () {
-  const innerWindowIds = {
-    mozilla: 1,
-    aboutBlank: 2,
-    profiler: 3,
-    exampleSubFrame: 4,
-    unknown: 5,
-  };
-  // This is the `profile.pages` array.
-  const pages = [
-    {
+  const pages = {
+    mozilla: {
       tabID: 1111,
-      innerWindowID: innerWindowIds.mozilla,
+      innerWindowID: 1,
       url: 'https://www.mozilla.org',
       embedderInnerWindowID: 0,
+      favicon: 'data:image/png;base64,test-png-favicon-data-for-mozilla.org',
     },
-    {
+    aboutBlank: {
       tabID: 2222,
-      innerWindowID: innerWindowIds.aboutBlank,
+      innerWindowID: 2,
       url: 'about:blank',
       embedderInnerWindowID: 0,
+      favicon: null,
     },
-    {
+    profiler: {
       tabID: 2222,
-      innerWindowID: innerWindowIds.profiler,
+      innerWindowID: 3,
       url: 'https://profiler.firefox.com/public/xyz',
       embedderInnerWindowID: 0,
+      favicon:
+        'data:image/png;base64,test-png-favicon-data-for-profiler.firefox.com',
     },
-    {
+    exampleSubFrame: {
       tabID: 2222,
-      innerWindowID: innerWindowIds.exampleSubFrame,
+      innerWindowID: 4,
       url: 'https://example.com/subframe',
       // This is a subframe of the page above.
-      embedderInnerWindowID: innerWindowIds.profiler,
+      embedderInnerWindowID: 3,
+      favicon: 'data:image/png;base64,test-png-favicon-data-for-example.com',
     },
-  ];
+    exampleTopFrame: {
+      tabID: 2222,
+      innerWindowID: 5,
+      url: 'https://example.com',
+      embedderInnerWindowID: 0,
+      favicon: 'data:image/png;base64,test-png-favicon-data-for-example.com',
+    },
+  };
 
   it('extracts the page data when there is only one relevant page', function () {
     // Adding only the https://www.mozilla.org page.
-    const relevantPages = new Set([innerWindowIds.mozilla]);
-
-    const pageData = extractProfileFilterPageData(pages, relevantPages);
-    expect(pageData).toEqual({
-      origin: 'https://www.mozilla.org',
-      hostname: 'www.mozilla.org',
-      favicon: 'https://www.mozilla.org/favicon.ico',
-    });
+    const pagesMap = new Map([[pages.mozilla.tabID, [pages.mozilla]]]);
+    const pageData = extractProfileFilterPageData(pagesMap, null);
+    expect([...pageData]).toEqual([
+      [
+        pages.mozilla.tabID,
+        {
+          origin: 'https://www.mozilla.org',
+          hostname: 'www.mozilla.org',
+          favicon:
+            'data:image/png;base64,test-png-favicon-data-for-mozilla.org',
+        },
+      ],
+    ]);
   });
 
   it('extracts the page data when there are multiple relevant page', function () {
-    const relevantPages = new Set([
-      innerWindowIds.profiler,
-      innerWindowIds.exampleSubFrame,
+    const pagesMap = new Map([
+      [pages.profiler.tabID, [pages.profiler, pages.exampleSubFrame]],
     ]);
 
-    const pageData = extractProfileFilterPageData(pages, relevantPages);
-    expect(pageData).toEqual({
-      origin: 'https://profiler.firefox.com',
-      hostname: 'profiler.firefox.com',
-      favicon: 'https://profiler.firefox.com/favicon.ico',
-    });
+    const pageData = extractProfileFilterPageData(pagesMap, null);
+    expect([...pageData]).toEqual([
+      [
+        pages.profiler.tabID,
+        {
+          origin: 'https://profiler.firefox.com',
+          hostname: 'profiler.firefox.com',
+          favicon:
+            'data:image/png;base64,test-png-favicon-data-for-profiler.firefox.com',
+        },
+      ],
+    ]);
   });
 
   it('extracts the page data when there are multiple relevant page with about:blank', function () {
-    const relevantPages = new Set([
-      innerWindowIds.aboutBlank,
-      innerWindowIds.profiler,
+    const pagesMap = new Map([
+      [pages.profiler.tabID, [pages.aboutBlank, pages.profiler]],
     ]);
 
-    const pageData = extractProfileFilterPageData(pages, relevantPages);
-    expect(pageData).toEqual({
-      origin: 'https://profiler.firefox.com',
-      hostname: 'profiler.firefox.com',
-      favicon: 'https://profiler.firefox.com/favicon.ico',
-    });
+    const pageData = extractProfileFilterPageData(pagesMap, null);
+    expect([...pageData]).toEqual([
+      [
+        pages.profiler.tabID,
+        {
+          origin: 'https://profiler.firefox.com',
+          hostname: 'profiler.firefox.com',
+          favicon:
+            'data:image/png;base64,test-png-favicon-data-for-profiler.firefox.com',
+        },
+      ],
+    ]);
   });
 
   it('extracts the page data when there is only about:blank as relevant page', function () {
-    const relevantPages = new Set([innerWindowIds.aboutBlank]);
+    const pagesMap = new Map([[pages.aboutBlank.tabID, [pages.aboutBlank]]]);
 
-    const pageData = extractProfileFilterPageData(pages, relevantPages);
-    expect(pageData).toEqual({
-      origin: 'about:blank',
-      hostname: 'about:blank',
-      favicon: null,
-    });
-  });
-
-  it('fails to extract the page data when there is no profile data in common', function () {
-    // Ignore the error we output when it fails.
-    jest.spyOn(console, 'error').mockImplementation(() => {});
-    const relevantPages = new Set([innerWindowIds.unknown]);
-
-    const pageData = extractProfileFilterPageData(pages, relevantPages);
-
-    expect(pageData).toEqual(null);
-    expect(console.error).toHaveBeenCalled();
+    const pageData = extractProfileFilterPageData(pagesMap, null);
+    expect([...pageData]).toEqual([
+      [
+        pages.aboutBlank.tabID,
+        {
+          origin: 'about:blank',
+          hostname: 'about:blank',
+          favicon: 'test-file-stub',
+        },
+      ],
+    ]);
   });
 
   it('fails to extract the page data when there is only a sub frame', function () {
     // Ignore the error we output when it fails.
     jest.spyOn(console, 'error').mockImplementation(() => {});
-    const relevantPages = new Set([innerWindowIds.exampleSubFrame]);
+    const pagesMap = new Map([
+      [pages.exampleSubFrame.tabID, [pages.exampleSubFrame]],
+    ]);
 
-    const pageData = extractProfileFilterPageData(pages, relevantPages);
-
-    expect(pageData).toEqual(null);
+    const pageData = extractProfileFilterPageData(pagesMap, null);
+    expect([...pageData]).toEqual([]);
     expect(console.error).toHaveBeenCalled();
+  });
+
+  it('extracts the page data of the last frame when there are multiple relevant pages', function () {
+    const pagesMap = new Map([
+      [pages.profiler.tabID, [pages.profiler, pages.exampleTopFrame]],
+    ]);
+
+    const pageData = extractProfileFilterPageData(pagesMap, null);
+    expect([...pageData]).toEqual([
+      [
+        pages.profiler.tabID,
+        {
+          origin: 'https://example.com',
+          hostname: 'example.com',
+          favicon:
+            'data:image/png;base64,test-png-favicon-data-for-example.com',
+        },
+      ],
+    ]);
+  });
+
+  it('can extract the data of several tabs', function () {
+    const pagesMap = new Map([
+      [pages.mozilla.tabID, [pages.mozilla]],
+      [pages.profiler.tabID, [pages.profiler, pages.exampleSubFrame]],
+    ]);
+    const pageData = extractProfileFilterPageData(pagesMap, null);
+    expect([...pageData]).toEqual([
+      [
+        pages.mozilla.tabID,
+        {
+          origin: 'https://www.mozilla.org',
+          hostname: 'www.mozilla.org',
+          favicon:
+            'data:image/png;base64,test-png-favicon-data-for-mozilla.org',
+        },
+      ],
+      [
+        pages.profiler.tabID,
+        {
+          origin: 'https://profiler.firefox.com',
+          hostname: 'profiler.firefox.com',
+          favicon:
+            'data:image/png;base64,test-png-favicon-data-for-profiler.firefox.com',
+        },
+      ],
+    ]);
   });
 });
 
@@ -1134,21 +1453,20 @@ describe('calculateFunctionSizeLowerBound', function () {
 
 describe('getNativeSymbolsForCallNode', function () {
   it('finds a single symbol', function () {
-    const { profile, funcNamesDictPerThread, nativeSymbolsDictPerThread } =
-      getProfileFromTextSamples(`
+    const {
+      derivedThreads,
+      funcNamesDictPerThread,
+      nativeSymbolsDictPerThread,
+      defaultCategory,
+    } = getProfileFromTextSamples(`
         funA[lib:XUL][address:1005][sym:symA:1000:]
         funB[lib:XUL][address:2007][sym:symB:2000:]
         funC[lib:XUL][address:2007][sym:symB:2000:][inl:1]
       `);
 
-    const thread = profile.threads[0];
+    const [thread] = derivedThreads;
     const { funA, funB, funC } = funcNamesDictPerThread[0];
     const { symB } = nativeSymbolsDictPerThread[0];
-    const categories = ensureExists(
-      profile.meta.categories,
-      'Expected to find categories'
-    );
-    const defaultCategory = categories.findIndex((c) => c.name === 'Other');
     const callNodeInfo = getCallNodeInfo(
       thread.stackTable,
       thread.frameTable,
@@ -1181,21 +1499,20 @@ describe('getNativeSymbolsForCallNode', function () {
   });
 
   it('finds multiple symbols', function () {
-    const { profile, funcNamesDictPerThread, nativeSymbolsDictPerThread } =
-      getProfileFromTextSamples(`
+    const {
+      derivedThreads,
+      funcNamesDictPerThread,
+      nativeSymbolsDictPerThread,
+      defaultCategory,
+    } = getProfileFromTextSamples(`
         funA[lib:XUL][address:1005][sym:symA:1000:]         funA[lib:XUL][address:1005][sym:symA:1000:]
         funB[lib:XUL][address:2007][sym:symB:2000:]         funD[lib:XUL][address:4007][sym:symD:4000:]
         funC[lib:XUL][address:2007][sym:symB:2000:][inl:1]  funC[lib:XUL][address:4007][sym:symD:4000:][inl:1]
       `);
 
-    const thread = profile.threads[0];
+    const [thread] = derivedThreads;
     const { funC } = funcNamesDictPerThread[0];
     const { symB, symD } = nativeSymbolsDictPerThread[0];
-    const categories = ensureExists(
-      profile.meta.categories,
-      'Expected to find categories'
-    );
-    const defaultCategory = categories.findIndex((c) => c.name === 'Other');
     const nonInvertedCallNodeInfo = getCallNodeInfo(
       thread.stackTable,
       thread.frameTable,
@@ -1203,10 +1520,10 @@ describe('getNativeSymbolsForCallNode', function () {
       defaultCategory
     );
     const callNodeInfo = getInvertedCallNodeInfo(
-      thread,
       nonInvertedCallNodeInfo.getNonInvertedCallNodeTable(),
       nonInvertedCallNodeInfo.getStackIndexToNonInvertedCallNodeIndex(),
-      defaultCategory
+      defaultCategory,
+      thread.funcTable.length
     );
     const c = callNodeInfo.getCallNodeIndexFromPath([funC]);
     expect(c).not.toBeNull();
@@ -1238,6 +1555,7 @@ describe('getNativeSymbolInfo', function () {
     `);
 
     const thread = profile.threads[0];
+    const stringTable = StringTable.withBackingArray(thread.stringArray);
     const { symSomeFunc, symOtherFunc } = nativeSymbolsDictPerThread[0];
 
     expect(
@@ -1245,7 +1563,7 @@ describe('getNativeSymbolInfo', function () {
         symSomeFunc,
         thread.nativeSymbols,
         thread.frameTable,
-        thread.stringTable
+        stringTable
       )
     ).toEqual({
       name: 'symSomeFunc',
@@ -1259,7 +1577,7 @@ describe('getNativeSymbolInfo', function () {
         symOtherFunc,
         thread.nativeSymbols,
         thread.frameTable,
-        thread.stringTable
+        stringTable
       )
     ).toEqual({
       name: 'symOtherFunc',

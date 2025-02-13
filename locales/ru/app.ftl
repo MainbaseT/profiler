@@ -30,6 +30,7 @@ AppHeader--github-icon =
 ## AppViewRouter
 ## This is used for displaying errors when loading the application.
 
+AppViewRouter--error-from-post-message = Не удалось импортировать профиль.
 AppViewRouter--error-unpublished = Не удалось получить профиль из { -firefox-brand-name }.
 AppViewRouter--error-from-file = Не удалось прочитать файл или проанализировать профиль в нем.
 AppViewRouter--error-local = Пока не реализовано.
@@ -339,6 +340,15 @@ Home--load-files-from-other-tools2 =
     панель производительности Chrome, <androidstudio>Android Studio</androidstudio> или
     любой файл, использующий <dhat>формат dhat</dhat> или <traceevent>Формат отслеживания событий Google</traceevent>. <write>Узнайте, как написать
     собственный инструмент импорта</write>.
+Home--install-chrome-extension = Установите расширение Chrome
+Home--chrome-extension-instructions =
+    Используйте <a>расширение { -profiler-brand-name } для Chrome</a>
+    для сбора профилей производительности в Chrome и анализа их в
+    { -profiler-brand-name }. Установите расширение из интернет-магазина Chrome.
+Home--chrome-extension-recording-instructions =
+    После установки используйте значок
+    расширения на панели инструментов или сочетания клавиш для запуска и остановки профилирования. Вы также можете
+    экспортировать профили и загрузить их здесь для подробного анализа.
 
 ## IdleSearchField
 ## The component that is used for all the search inputs in the application.
@@ -642,6 +652,9 @@ NumberFormat--short-date = { SHORTDATE($date) }
 
 PanelSearch--search-field-hint = Знаете ли вы, что можно использовать запятую (,) для поиска по нескольким фильтрам?
 
+## Profile Name Button
+
+
 ## Profile Delete Button
 
 # This string is used on the tooltip of the published profile links delete button in uploaded recordings page.
@@ -689,6 +702,7 @@ ProfileFilterNavigator--full-range-with-duration = Полный диапазон
 
 ## Profile Loader Animation
 
+ProfileLoaderAnimation--loading-from-post-message = Импорт и обработка профиля…
 ProfileLoaderAnimation--loading-unpublished = Импорт профиля напрямую из { -firefox-brand-name }…
 ProfileLoaderAnimation--loading-from-file = Чтение файла и обработка профиля…
 ProfileLoaderAnimation--loading-local = Пока не реализовано.
@@ -764,6 +778,13 @@ TabBar--marker-table-tab = Таблица маркеров
 TabBar--network-tab = Сеть
 TabBar--js-tracer-tab = JS-трассировщик
 
+## TabSelectorMenu
+## This component is a context menu that's opened when you click on the root
+## range at the top left corner for profiler analysis view. It's used to switch
+## between tabs that were captured in the profile.
+
+TabSelectorMenu--all-tabs-and-windows = Все вкладки и окна
+
 ## TrackContextMenu
 ## This is used as a context menu for timeline to organize the tracks in the
 ## analysis UI.
@@ -780,6 +801,10 @@ TrackContextMenu--hide-other-screenshots-tracks = Скрыть другие тр
 TrackContextMenu--hide-track = Скрыть «{ $trackName }»
 TrackContextMenu--show-all-tracks = Показать все треки
 TrackContextMenu--show-local-tracks-in-process = Показать все треки в этом процессе
+# This is used as the context menu item to hide all tracks of the selected track's type.
+# Variables:
+#   $type (String) - Name of the type of selected track to hide.
+TrackContextMenu--hide-all-tracks-by-selected-track-type = Скрыть все треки для типа «{ $type }»
 # This is used in the tracks context menu as a button to show all the tracks
 # that match the search filter.
 TrackContextMenu--show-all-matching-tracks = Показать все совпадающие треки

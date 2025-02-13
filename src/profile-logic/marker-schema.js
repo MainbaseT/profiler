@@ -26,7 +26,7 @@ import type {
   Tid,
   Pid,
 } from 'firefox-profiler/types';
-import type { UniqueStringArray } from '../utils/unique-string-array';
+import type { StringTable } from '../utils/string-table';
 
 /**
  * The marker schema comes from Gecko, and is embedded in the profile. However,
@@ -78,45 +78,17 @@ export const markerSchemaFrontEndOnly: MarkerSchema[] = [
     name: 'Network',
     display: ['marker-table', 'marker-chart'],
     chartLabel: '{marker.data.URI}',
-    data: [],
+    data: [
+      {
+        format: 'string',
+        key: 'contentType',
+        label: 'Content Type',
+        searchable: true,
+        hidden: true,
+      },
+    ],
   },
 ];
-
-/**
- * For the most part, schema is matched up by the Payload's "type" field,
- * but for practical purposes, there are a few other options, see the
- * implementation of this function for details.
- */
-export function getMarkerSchemaName(
-  markerSchemaByName: MarkerSchemaByName,
-  markerName: string,
-  markerData: MarkerPayload | null
-): string {
-  if (markerData) {
-    const { type } = markerData;
-    if (type === 'tracing' && markerData.category) {
-      // TODO - Tracing markers have a duplicate "category" field.
-      // See issue #2749
-
-      // Does a marker schema for the "category" exist?
-      return markerSchemaByName[markerData.category] === undefined
-        ? // If not, default back to tracing
-          'tracing'
-        : // If so, use the category as the schema name.
-          markerData.category;
-    }
-    if (type === 'Text') {
-      // Text markers are a cheap and easy way to create markers with
-      // a category. Check for schema if it exists, if not, fallback to
-      // a Text type marker.
-      return markerSchemaByName[markerName] === undefined ? 'Text' : markerName;
-    }
-    return markerData.type;
-  }
-
-  // Fall back to using the name if no payload exists.
-  return markerName;
-}
 
 /**
  * This function takes the intended marker schema for a marker field, and applies
@@ -124,14 +96,10 @@ export function getMarkerSchemaName(
  */
 export function getSchemaFromMarker(
   markerSchemaByName: MarkerSchemaByName,
-  markerName: string,
   markerData: MarkerPayload | null
 ): MarkerSchema | null {
-  return (
-    markerSchemaByName[
-      getMarkerSchemaName(markerSchemaByName, markerName, markerData)
-    ] || null
-  );
+  const schemaName = markerData ? markerData.type : null;
+  return schemaName ? (markerSchemaByName[schemaName] ?? null) : null;
 }
 
 /**
@@ -144,7 +112,7 @@ export function getSchemaFromMarker(
 export function parseLabel(
   markerSchema: MarkerSchema,
   categories: CategoryList,
-  stringTable: UniqueStringArray,
+  stringTable: StringTable,
   label: string
 ): (Marker) => string {
   // Split the label on the "{key}" capture groups.
@@ -337,7 +305,7 @@ export function getLabelGetter(
   markerSchemaList: MarkerSchema[],
   markerSchemaByName: MarkerSchemaByName,
   categoryList: CategoryList,
-  stringTable: UniqueStringArray,
+  stringTable: StringTable,
   labelKey: LabelKey
 ): (MarkerIndex) => string {
   // Build up a list of label functions, that are tied to the schema name.
@@ -385,12 +353,8 @@ export function getLabelGetter(
     // No label exists, it will have to be generated for the first time.
     if (label === undefined) {
       const marker = getMarker(markerIndex);
-      const schemaName = getMarkerSchemaName(
-        markerSchemaByName,
-        marker.name,
-        marker.data
-      );
-      const applyLabel = labelFns.get(schemaName);
+      const schemaName = marker.data ? marker.data.type : null;
+      const applyLabel = schemaName ? labelFns.get(schemaName) : null;
 
       label = applyLabel
         ? // A label function is available, apply it.
@@ -415,7 +379,7 @@ export function formatFromMarkerSchema(
   markerType: string,
   format: MarkerFormatType,
   value: any,
-  stringTable: UniqueStringArray,
+  stringTable: StringTable,
   threadIdToNameMap?: Map<Tid, string>,
   processIdToNameMap?: Map<Pid, string>
 ): string {
@@ -472,10 +436,13 @@ export function formatFromMarkerSchema(
   switch (format) {
     case 'url':
     case 'file-path':
+    case 'sanitized-string':
     case 'string':
       // Make sure a non-empty string is returned here.
       return String(value) || '(empty)';
     case 'unique-string':
+    case 'flow-id':
+    case 'terminating-flow-id':
       return stringTable.getString(value, '(empty)');
     case 'duration':
     case 'time':
@@ -535,7 +502,7 @@ export function formatMarkupFromMarkerSchema(
   markerType: string,
   format: MarkerFormatType,
   value: any,
-  stringTable: UniqueStringArray,
+  stringTable: StringTable,
   threadIdToNameMap?: Map<Tid, string>,
   processIdToNameMap?: Map<Pid, string>
 ): React.Element<any> | string {
@@ -658,6 +625,7 @@ export function formatMarkupFromMarkerSchema(
 export function markerPayloadMatchesSearch(
   markerSchema: MarkerSchema,
   marker: Marker,
+  stringTable: StringTable,
   testFun: (string, string) => boolean
 ): boolean {
   const { data } = marker;
@@ -668,7 +636,33 @@ export function markerPayloadMatchesSearch(
   // Check if searchable fields match the search regular expression.
   for (const payloadField of markerSchema.data) {
     if (payloadField.searchable) {
-      const value = data[payloadField.key];
+      let value = data[payloadField.key];
+      if (
+        payloadField.format === 'unique-string' ||
+        payloadField.format === 'flow-id' ||
+        payloadField.format === 'terminating-flow-id'
+      ) {
+        if (value === undefined) {
+          // The value is missing, but this is OK, values are optional.
+          continue;
+        }
+
+        if (typeof value !== 'number') {
+          console.warn(
+            `In marker ${marker.name}, the key ${payloadField.key} has an invalid value "${value}" as a unique string, it isn't a number.`
+          );
+          continue;
+        }
+
+        if (!stringTable.hasIndex(value)) {
+          console.warn(
+            `In marker ${marker.name}, the key ${payloadField.key} has an invalid index "${value}" as a unique string, as it's missing from the string table.`
+          );
+          continue;
+        }
+        value = stringTable.getString(value);
+      }
+
       if (value === undefined || value === null || value === '') {
         continue;
       }
@@ -680,4 +674,33 @@ export function markerPayloadMatchesSearch(
   }
 
   return false;
+}
+
+/**
+ * Returns a map of marker schema name -> array of field keys, listing any fields
+ * that contain indexes into the string table. If a marker schema has no such
+ * fields, then we don't put an entry for it in the returned map.
+ */
+export function computeStringIndexMarkerFieldsByDataType(
+  markerSchemas: MarkerSchema[]
+): Map<string, string[]> {
+  const stringIndexMarkerFieldsByDataType = new Map();
+
+  // 'CompositorScreenshot' markers currently don't have a schema (#5303),
+  // hardcode the url field (which is a string index) until they do.
+  stringIndexMarkerFieldsByDataType.set('CompositorScreenshot', ['url']);
+
+  for (const schema of markerSchemas) {
+    const { name, data } = schema;
+    const stringIndexFields = [];
+    for (const field of data) {
+      if (field.format === 'unique-string' && field.key) {
+        stringIndexFields.push(field.key);
+      }
+    }
+    if (stringIndexFields.length !== 0) {
+      stringIndexMarkerFieldsByDataType.set(name, stringIndexFields);
+    }
+  }
+  return stringIndexMarkerFieldsByDataType;
 }

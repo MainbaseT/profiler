@@ -30,6 +30,7 @@ AppHeader--github-icon =
 ## AppViewRouter
 ## This is used for displaying errors when loading the application.
 
+AppViewRouter--error-from-post-message = Koe it profyl net ymportearje.
 AppViewRouter--error-unpublished = Kin it profyl net ophelje fan { -firefox-brand-name }.
 AppViewRouter--error-from-file = Kin it bestân net lêze of it profyl deryn ûntlede.
 AppViewRouter--error-local = Noch net ymplemintearre.
@@ -342,6 +343,15 @@ Home--load-files-from-other-tools2 =
     elk bestân mei it <dhat>dhat-formaat</dhat> of de <traceevent>Trace Event-yndieling
     fan Google</traceevent> brûkt. <write>Lês hoe’t jo jo
     eigen ymportearder skriuwe</write>.
+Home--install-chrome-extension = De Chrome-útwreiding ynstallearje
+Home--chrome-extension-instructions =
+    Brûk de <a>{ -profiler-brand-name }-útwreiding foar Chrome</a>
+    om prestaasjeprofilen yn Chrome fêst te lizzen en se yn de
+    { -profiler-brand-name } te analysearjen. Ynstallearje de útwreiding fan de Chrome Web Store út.
+Home--chrome-extension-recording-instructions =
+    Brûk nei ynstallaasje it arkbalkepiktogram fan de
+    útwreiding of de fluchkeppelingen om it profilearjen te starten en te stopjen. Jo kinne ek
+    profilen eksportearje en dizze hjir lade foar detaillearre analyze.
 
 ## IdleSearchField
 ## The component that is used for all the search inputs in the application.
@@ -628,6 +638,9 @@ NumberFormat--short-date = { SHORTDATE($date) }
 
 PanelSearch--search-field-hint = Wisten jo dat jo de komma (,) brûke kinne om mei ferskate termen te sykjen?
 
+## Profile Name Button
+
+
 ## Profile Delete Button
 
 # This string is used on the tooltip of the published profile links delete button in uploaded recordings page.
@@ -675,6 +688,7 @@ ProfileFilterNavigator--full-range-with-duration = Folslein berik ({ $fullRangeD
 
 ## Profile Loader Animation
 
+ProfileLoaderAnimation--loading-from-post-message = Profyl ymportearje en ferwurkje…
 ProfileLoaderAnimation--loading-unpublished = Profyl streekrjocht fan { -firefox-brand-name } út ymportearje…
 ProfileLoaderAnimation--loading-from-file = It bestân lêze en it profyl ferwurkje…
 ProfileLoaderAnimation--loading-local = Noch net ymplemintearre.
@@ -750,6 +764,13 @@ TabBar--marker-table-tab = Markearingstabel
 TabBar--network-tab = Netwurk
 TabBar--js-tracer-tab = JS-tracer
 
+## TabSelectorMenu
+## This component is a context menu that's opened when you click on the root
+## range at the top left corner for profiler analysis view. It's used to switch
+## between tabs that were captured in the profile.
+
+TabSelectorMenu--all-tabs-and-windows = Alle ljepblêden en finsters
+
 ## TrackContextMenu
 ## This is used as a context menu for timeline to organize the tracks in the
 ## analysis UI.
@@ -766,6 +787,10 @@ TrackContextMenu--hide-other-screenshots-tracks = Oare skermôfdruktracks fersto
 TrackContextMenu--hide-track = ‘{ $trackName }’ ferstopje
 TrackContextMenu--show-all-tracks = Alle tracks toane
 TrackContextMenu--show-local-tracks-in-process = Alle tracks yn dit proses toane
+# This is used as the context menu item to hide all tracks of the selected track's type.
+# Variables:
+#   $type (String) - Name of the type of selected track to hide.
+TrackContextMenu--hide-all-tracks-by-selected-track-type = Alle tracks fan it type ‘{ $type }’ ferstopje
 # This is used in the tracks context menu as a button to show all the tracks
 # that match the search filter.
 TrackContextMenu--show-all-matching-tracks = Alle oerienkommende tracks toane
