@@ -11,10 +11,7 @@ import * as MarkerData from '../../profile-logic/marker-data';
 import * as MarkerTimingLogic from '../../profile-logic/marker-timing';
 import * as ProfileSelectors from '../profile';
 import { getRightClickedMarkerInfo } from '../right-clicked-marker';
-import {
-  getLabelGetter,
-  getMarkerSchemaName,
-} from '../../profile-logic/marker-schema';
+import { getLabelGetter } from '../../profile-logic/marker-schema';
 import { getInclusiveSampleIndexRangeForSelection } from '../../profile-logic/profile-data';
 
 import type { BasicThreadSelectorsPerThread } from './thread';
@@ -92,7 +89,7 @@ export function getMarkerSelectorsPerThread(
    * very start of our marker pipeline. */
   const getDerivedMarkerInfo: Selector<DerivedMarkerInfo> = createSelector(
     _getRawMarkerTable,
-    threadSelectors.getStringTable,
+    (state) => threadSelectors.getRawThread(state).stringArray,
     _getThreadId,
     threadSelectors.getThreadRange,
     ProfileSelectors.getIPCMarkerCorrelations,
@@ -133,6 +130,12 @@ export function getMarkerSelectorsPerThread(
         (a, b) => a.start - b.start
       )
   );
+
+  /**
+   * This returns the maximum marker index.
+   */
+  const getMarkerListLength: Selector<number> = (state) =>
+    getFullMarkerList(state).length;
 
   /**
    * This selector returns a function that's used to retrieve a marker object
@@ -296,6 +299,7 @@ export function getMarkerSelectorsPerThread(
       getCommittedRangeAndTabFilteredMarkerIndexes,
       ProfileSelectors.getMarkerSchemaByName,
       UrlState.getMarkersSearchStringsAsRegExp,
+      threadSelectors.getStringTable,
       ProfileSelectors.getCategories,
       MarkerData.getSearchFilteredMarkerIndexes
     );
@@ -354,6 +358,7 @@ export function getMarkerSelectorsPerThread(
       getNetworkMarkerIndexes,
       ProfileSelectors.getMarkerSchemaByName,
       UrlState.getNetworkSearchStringsAsRegExp,
+      threadSelectors.getStringTable,
       ProfileSelectors.getCategories,
       MarkerData.getSearchFilteredMarkerIndexes
     );
@@ -444,7 +449,7 @@ export function getMarkerSelectorsPerThread(
   /**
    * This getter uses the marker schema to decide on the labels for the marker chart.
    */
-  const _getMarkerChartLabelGetter: Selector<(MarkerIndex) => string> =
+  const getMarkerChartLabelGetter: Selector<(MarkerIndex) => string> =
     createSelector(
       getMarkerGetter,
       ProfileSelectors.getMarkerSchema,
@@ -479,7 +484,6 @@ export function getMarkerSelectorsPerThread(
     createSelector(
       getMarkerGetter,
       getMarkerChartMarkerIndexes,
-      _getMarkerChartLabelGetter,
       ProfileSelectors.getCategories,
       MarkerTimingLogic.getMarkerTimingAndBuckets
     );
@@ -533,7 +537,6 @@ export function getMarkerSelectorsPerThread(
   const getNetworkTrackTiming: Selector<MarkerTiming[]> = createSelector(
     getMarkerGetter,
     getNetworkMarkerIndexes,
-    _getMarkerChartLabelGetter,
     MarkerTimingLogic.getMarkerTiming
   );
 
@@ -544,7 +547,6 @@ export function getMarkerSelectorsPerThread(
   const getUserTimingMarkerTiming: Selector<MarkerTiming[]> = createSelector(
     getMarkerGetter,
     getUserTimingMarkerIndexes,
-    _getMarkerChartLabelGetter,
     MarkerTimingLogic.getMarkerTiming
   );
 
@@ -677,11 +679,7 @@ export function getMarkerSelectorsPerThread(
             if (
               data &&
               marker.name === name &&
-              getMarkerSchemaName(
-                ProfileSelectors.getMarkerSchemaByName,
-                marker.name,
-                data
-              ) === schemaName &&
+              data.type === schemaName &&
               keys.every((key) => key in data)
             ) {
               markerIndexes.push(index);
@@ -737,11 +735,13 @@ export function getMarkerSelectorsPerThread(
     getMarkerIndexToRawMarkerIndexes,
     getFullMarkerList,
     getFullMarkerListIndexes,
+    getMarkerListLength,
     getNetworkMarkerIndexes,
     getSearchFilteredNetworkMarkerIndexes,
     getAreMarkerPanelsEmptyInFullRange,
     getMarkerTableMarkerIndexes,
     getMarkerChartMarkerIndexes,
+    getMarkerChartLabelGetter,
     getMarkerTooltipLabelGetter,
     getMarkerTableLabelGetter,
     getMarkerLabelToCopyGetter,

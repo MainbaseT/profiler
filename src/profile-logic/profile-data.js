@@ -9,14 +9,16 @@ import MixedTupleMap from 'mixedtuplemap';
 import { oneLine } from 'common-tags';
 import {
   resourceTypes,
-  getEmptyUnbalancedNativeAllocationsTable,
-  getEmptyBalancedNativeAllocationsTable,
-  getEmptyStackTable,
+  getEmptyRawStackTable,
   getEmptyCallNodeTable,
   shallowCloneFrameTable,
   shallowCloneFuncTable,
 } from './data-structures';
-import { CallNodeInfoImpl } from './call-node-info';
+import {
+  CallNodeInfoNonInverted,
+  CallNodeInfoInverted,
+} from './call-node-info';
+import { computeThreadCPURatio } from './cpu';
 import {
   INSTANT,
   INTERVAL,
@@ -26,16 +28,27 @@ import {
 import { timeCode } from 'firefox-profiler/utils/time-code';
 import { bisectionRight, bisectionLeft } from 'firefox-profiler/utils/bisect';
 import { parseFileNameFromSymbolication } from 'firefox-profiler/utils/special-paths';
+import { StringTable } from 'firefox-profiler/utils/string-table';
 import {
   assertExhaustiveCheck,
   ensureExists,
   getFirstItemFromSet,
 } from 'firefox-profiler/utils/flow';
+import {
+  numberSeriesFromDeltas,
+  numberSeriesToDeltas,
+} from 'firefox-profiler/utils/number-series';
+import ExtensionFavicon from '../../res/img/svg/extension-outline.svg';
+import DefaultLinkFavicon from '../../res/img/svg/globe.svg';
 
 import type {
   Profile,
+  RawThread,
   Thread,
+  RawSamplesTable,
   SamplesTable,
+  RawStackTable,
+  SampleUnits,
   StackTable,
   FrameTable,
   FuncTable,
@@ -51,14 +64,15 @@ import type {
   IndexIntoNativeSymbolTable,
   ThreadIndex,
   Category,
+  RawCounter,
   Counter,
+  RawCounterSamplesTable,
   CounterSamplesTable,
   NativeAllocationsTable,
   InnerWindowID,
   BalancedNativeAllocationsTable,
   IndexIntoFrameTable,
   PageList,
-  CallNodeInfo,
   CallNodeTable,
   CallNodePath,
   CallNodeAndCategoryPath,
@@ -82,8 +96,9 @@ import type {
   BottomBoxInfo,
   Bytes,
   ThreadWithReservedFunctions,
+  TabID,
 } from 'firefox-profiler/types';
-import type { UniqueStringArray } from 'firefox-profiler/utils/unique-string-array';
+import type { CallNodeInfo, SuffixOrderIndex } from './call-node-info';
 
 /**
  * Various helpers for dealing with the profile as a data structure.
@@ -105,13 +120,7 @@ export function getCallNodeInfo(
     funcTable,
     defaultCategory
   );
-  return new CallNodeInfoImpl(
-    callNodeTable,
-    callNodeTable,
-    stackIndexToCallNodeIndex,
-    stackIndexToCallNodeIndex,
-    false
-  );
+  return new CallNodeInfoNonInverted(callNodeTable, stackIndexToCallNodeIndex);
 }
 
 type CallNodeTableAndStackMap = {
@@ -146,7 +155,7 @@ export function computeCallNodeTable(
     const subcategory: Array<IndexIntoSubcategoryListForCategory> = [];
     const innerWindowID: Array<InnerWindowID> = [];
     const sourceFramesInlinedIntoSymbol: Array<
-      IndexIntoNativeSymbolTable | -1 | null,
+      IndexIntoNativeSymbolTable | -1 | -2,
     > = [];
     let length = 0;
 
@@ -166,7 +175,7 @@ export function computeCallNodeTable(
       categoryIndex: IndexIntoCategoryList,
       subcategoryIndex: IndexIntoSubcategoryListForCategory,
       windowID: InnerWindowID,
-      inlinedIntoSymbol: IndexIntoNativeSymbolTable | null
+      inlinedIntoSymbol: IndexIntoNativeSymbolTable | -1 | -2
     ) {
       const index = length++;
       prefix[index] = prefixIndex;
@@ -219,8 +228,8 @@ export function computeCallNodeTable(
       const subcategoryIndex = stackTable.subcategory[stackIndex];
       const inlinedIntoSymbol =
         frameTable.inlineDepth[frameIndex] > 0
-          ? frameTable.nativeSymbol[frameIndex]
-          : null;
+          ? (frameTable.nativeSymbol[frameIndex] ?? -2)
+          : -2;
       const funcIndex = frameTable.func[frameIndex];
 
       // Check if the call node for this stack already exists.
@@ -316,7 +325,7 @@ function _createCallNodeTableFromUnorderedComponents(
   category: Array<IndexIntoCategoryList>,
   subcategory: Array<IndexIntoSubcategoryListForCategory>,
   innerWindowID: Array<InnerWindowID>,
-  sourceFramesInlinedIntoSymbol: Array<IndexIntoNativeSymbolTable | -1 | null>,
+  sourceFramesInlinedIntoSymbol: Array<IndexIntoNativeSymbolTable | -1 | -2>,
   length: number,
   stackIndexToCallNodeIndex: Int32Array
 ): CallNodeTableAndStackMap {
@@ -335,7 +344,7 @@ function _createCallNodeTableFromUnorderedComponents(
     const categorySorted = new Int32Array(length);
     const subcategorySorted = new Int32Array(length);
     const innerWindowIDSorted = new Float64Array(length);
-    const sourceFramesInlinedIntoSymbolSorted = new Array(length);
+    const sourceFramesInlinedIntoSymbolSorted = new Int32Array(length);
     const depthSorted = new Array(length);
     let maxDepth = 0;
 
@@ -428,59 +437,57 @@ function _createCallNodeTableFromUnorderedComponents(
  * Generate the inverted CallNodeInfo for a thread.
  */
 export function getInvertedCallNodeInfo(
-  thread: Thread,
   nonInvertedCallNodeTable: CallNodeTable,
   stackIndexToNonInvertedCallNodeIndex: Int32Array,
-  defaultCategory: IndexIntoCategoryList
-): CallNodeInfo {
-  // We compute an inverted stack table, but we don't let it escape this function.
-  const {
-    invertedThread,
-    oldStackToNewStack: nonInvertedStackToInvertedStack,
-  } = _computeThreadWithInvertedStackTable(thread, defaultCategory);
-
-  // Create an inverted call node table based on the inverted stack table.
-  const {
-    callNodeTable,
-    stackIndexToCallNodeIndex: invertedStackIndexToCallNodeIndex,
-  } = computeCallNodeTable(
-    invertedThread.stackTable,
-    invertedThread.frameTable,
-    invertedThread.funcTable,
-    defaultCategory
+  defaultCategory: IndexIntoCategoryList,
+  funcCount: number
+): CallNodeInfoInverted {
+  return new CallNodeInfoInverted(
+    nonInvertedCallNodeTable,
+    stackIndexToNonInvertedCallNodeIndex,
+    defaultCategory,
+    funcCount
   );
+}
 
-  // Create a mapping that maps a stack index from the non-inverted thread to
-  // its corresponding call node in the inverted tree.
-  const nonInvertedStackIndexToCallNodeIndex = new Int32Array(
-    thread.stackTable.length
-  );
-  for (
-    let nonInvertedStackIndex = 0;
-    nonInvertedStackIndex < nonInvertedStackIndexToCallNodeIndex.length;
-    nonInvertedStackIndex++
-  ) {
-    const invertedStackIndex = nonInvertedStackToInvertedStack.get(
-      nonInvertedStackIndex
-    );
-    if (invertedStackIndex === undefined) {
-      // This stack is not used as a self stack, only as a prefix stack.
-      // There may or may not be an inverted call node that corresponds to it,
-      // but we haven't checked that and we don't need to know it.
-      // nonInvertedStackIndexToCallNodeIndex only needs useful values for self stacks.
-      nonInvertedStackIndexToCallNodeIndex[nonInvertedStackIndex] = -1;
-    } else {
-      nonInvertedStackIndexToCallNodeIndex[nonInvertedStackIndex] =
-        invertedStackIndexToCallNodeIndex[invertedStackIndex];
+// Compare two non-inverted call nodes in "suffix order".
+// The suffix order is defined as the lexicographical order of the inverted call
+// path, or, in other words, the "backwards" lexicographical order of the
+// non-inverted call paths.
+//
+// Example of some suffix ordered non-inverted call paths:
+//       [0]
+//    [0, 0]
+//    [2, 0]
+// [4, 5, 1]
+//    [4, 5]
+function _compareNonInvertedCallNodesInSuffixOrder(
+  callNodeA: IndexIntoCallNodeTable,
+  callNodeB: IndexIntoCallNodeTable,
+  nonInvertedCallNodeTable: CallNodeTable
+): number {
+  // Walk up both and stop at the first non-matching function.
+  // Walking up the non-inverted tree is equivalent to walking down the
+  // inverted tree.
+  while (true) {
+    const funcA = nonInvertedCallNodeTable.func[callNodeA];
+    const funcB = nonInvertedCallNodeTable.func[callNodeB];
+    if (funcA !== funcB) {
+      return funcA - funcB;
+    }
+    callNodeA = nonInvertedCallNodeTable.prefix[callNodeA];
+    callNodeB = nonInvertedCallNodeTable.prefix[callNodeB];
+    if (callNodeA === callNodeB) {
+      break;
+    }
+    if (callNodeA === -1) {
+      return -1;
+    }
+    if (callNodeB === -1) {
+      return 1;
     }
   }
-  return new CallNodeInfoImpl(
-    callNodeTable,
-    nonInvertedCallNodeTable,
-    nonInvertedStackIndexToCallNodeIndex,
-    stackIndexToNonInvertedCallNodeIndex,
-    true
-  );
+  return 0;
 }
 
 // Given a stack index `needleStack` and a call node in the inverted tree
@@ -489,6 +496,17 @@ export function getInvertedCallNodeInfo(
 // there is no such ancestor stack.
 //
 // Also returns null for any stacks which aren't used as self stacks.
+//
+// Note: This function doesn't actually have a parameter named `invertedCallTreeNode`.
+// Instead, it has two parameters for the node's suffix order index range. This
+// range is obtained by the caller and is enough to check whether a stack's call
+// path ends with the path suffix represented by the inverted call node. The caller
+// gets the suffix order index range as follows:
+//
+// ```
+// const [rangeStart, rangeEnd] =
+//     callNodeInfo.getSuffixOrderIndexRangeForCallNode(callNodeIndex);
+// ```
 //
 // Example:
 //
@@ -517,33 +535,32 @@ export function getInvertedCallNodeInfo(
 // that frame, for example the frame's address or line.
 export function getMatchingAncestorStackForInvertedCallNode(
   needleStack: IndexIntoStackTable,
-  invertedTreeCallNode: IndexIntoCallNodeTable,
-  invertedTreeCallNodeSubtreeEnd: IndexIntoCallNodeTable,
+  suffixOrderIndexRangeStart: SuffixOrderIndex,
+  suffixOrderIndexRangeEnd: SuffixOrderIndex,
+  suffixOrderIndexes: Uint32Array,
   invertedTreeCallNodeDepth: number,
-  stackIndexToInvertedCallNodeIndex: Int32Array,
+  stackIndexToCallNodeIndex: Int32Array,
   stackTablePrefixCol: Array<IndexIntoStackTable | null>
 ): IndexIntoStackTable | null {
-  // Get the inverted call tree node for the (non-inverted) stack.
+  // Get the non-inverted call tree node for the (non-inverted) stack.
   // For example, if the stack has the call path A -> B -> C,
-  // this will give us the node C <- B <- A in the inverted tree.
-  const needleCallNode = stackIndexToInvertedCallNodeIndex[needleStack];
+  // this will give us the node A -> B -> C in the non-inverted tree.
+  const needleCallNode = stackIndexToCallNodeIndex[needleStack];
+  const needleSuffixOrderIndex = suffixOrderIndexes[needleCallNode];
 
-  // Check if needleCallNode is a descendant of invertedTreeCallNode in the
-  // inverted tree.
+  // Check if needleCallNode's call path ends with the call path suffix represented
+  // by the inverted call node.
   if (
-    needleCallNode >= invertedTreeCallNode &&
-    needleCallNode < invertedTreeCallNodeSubtreeEnd
+    needleSuffixOrderIndex >= suffixOrderIndexRangeStart &&
+    needleSuffixOrderIndex < suffixOrderIndexRangeEnd
   ) {
-    // needleCallNode is a descendant of invertedTreeCallNode in the inverted tree.
-    // That means that needleStack's self time contributes to the total time of
-    // invertedTreeCallNode. It also means that the non-inverted call path of
-    // needleStack "ends with" the suffix described by invertedTreeCallNode.
-    // For example, if invertedTreeCallNode is C <- B, and needleStack has the
+    // Yes, needleCallNode's call path ends with the call path suffix represented
+    // by the inverted call node.
+    // For example, if our node is C <- B in the inverted tree, and needleStack has the
     // non-inverted call path A -> B -> C, then we now know that A -> B -> C ends
     // with B -> C.
-    // Now we strip off this suffix. In the example, we strip off "-> C" at the
-    // end so that we end up with a stack for A -> B.
-    // Stripping off the suffix is equivalent to "walking down" in the inverted tree.
+    // Now we strip off this suffix. In the example, invertedTreeCallNodeDepth is 1
+    // so we strip off "-> C" at the end and return a stack for A -> B.
     return getNthPrefixStack(
       needleStack,
       invertedTreeCallNodeDepth,
@@ -551,7 +568,7 @@ export function getMatchingAncestorStackForInvertedCallNode(
     );
   }
 
-  // Not a descendant; return null.
+  // The stack's call path doesn't end with the suffix we were looking for; return null.
   return null;
 }
 
@@ -591,7 +608,7 @@ export function getSampleIndexToCallNodeIndex(
  * This is an implementation of getSamplesSelectedStates for just the case where
  * no call node is selected.
  */
-function getSamplesSelectedStatesForNoSelection(
+function _getSamplesSelectedStatesForNoSelection(
   sampleCallNodes: Array<IndexIntoCallNodeTable | null>,
   activeTabFilteredCallNodes: Array<IndexIntoCallNodeTable | null>
 ): SelectedState[] {
@@ -624,7 +641,7 @@ function getSamplesSelectedStatesForNoSelection(
 }
 
 /**
- * Given the call node for each sample and the call node selected states,
+ * Given the call node for each sample and the selected call node,
  * compute each sample's selected state.
  *
  * For samples that are not filtered out, the sample's selected state is based
@@ -670,12 +687,15 @@ function getSamplesSelectedStatesForNoSelection(
  * In this example, the selected node has index 13 and the "selected index range"
  * is the range from 13 to 21 (not including 21).
  */
-function mapCallNodeSelectedStatesToSamples(
+function _getSamplesSelectedStatesNonInverted(
   sampleCallNodes: Array<IndexIntoCallNodeTable | null>,
   activeTabFilteredCallNodes: Array<IndexIntoCallNodeTable | null>,
   selectedCallNodeIndex: IndexIntoCallNodeTable,
-  selectedCallNodeDescendantsEndIndex: IndexIntoCallNodeTable
+  callNodeInfo: CallNodeInfo
 ): SelectedState[] {
+  const callNodeTable = callNodeInfo.getNonInvertedCallNodeTable();
+  const selectedCallNodeDescendantsEndIndex =
+    callNodeTable.subtreeRangeEnd[selectedCallNodeIndex];
   const sampleCount = sampleCallNodes.length;
   const samplesSelectedStates = new Array(sampleCount);
   for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
@@ -704,6 +724,48 @@ function mapCallNodeSelectedStatesToSamples(
 }
 
 /**
+ * The implementation of getSamplesSelectedStates for the inverted tree.
+ *
+ * This uses the suffix order, see the documentation of CallNodeInfoInverted.
+ */
+function _getSamplesSelectedStatesInverted(
+  sampleNonInvertedCallNodes: Array<IndexIntoCallNodeTable | null>,
+  activeTabFilteredNonInvertedCallNodes: Array<IndexIntoCallNodeTable | null>,
+  selectedInvertedCallNodeIndex: IndexIntoCallNodeTable,
+  callNodeInfo: CallNodeInfoInverted
+): SelectedState[] {
+  const suffixOrderIndexes = callNodeInfo.getSuffixOrderIndexes();
+  const [selectedSubtreeRangeStart, selectedSubtreeRangeEnd] =
+    callNodeInfo.getSuffixOrderIndexRangeForCallNode(
+      selectedInvertedCallNodeIndex
+    );
+  const sampleCount = sampleNonInvertedCallNodes.length;
+  const samplesSelectedStates = new Array(sampleCount);
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+    let sampleSelectedState: SelectedState = 'SELECTED';
+    const callNodeIndex = sampleNonInvertedCallNodes[sampleIndex];
+    if (callNodeIndex !== null) {
+      const suffixOrderIndex = suffixOrderIndexes[callNodeIndex];
+      if (suffixOrderIndex < selectedSubtreeRangeStart) {
+        sampleSelectedState = 'UNSELECTED_ORDERED_BEFORE_SELECTED';
+      } else if (suffixOrderIndex >= selectedSubtreeRangeEnd) {
+        sampleSelectedState = 'UNSELECTED_ORDERED_AFTER_SELECTED';
+      }
+    } else {
+      // This sample was filtered out.
+      sampleSelectedState =
+        activeTabFilteredNonInvertedCallNodes[sampleIndex] === null
+          ? // This sample was not part of the active tab.
+            'FILTERED_OUT_BY_ACTIVE_TAB'
+          : // This sample was filtered out in the transform pipeline.
+            'FILTERED_OUT_BY_TRANSFORM';
+    }
+    samplesSelectedStates[sampleIndex] = sampleSelectedState;
+  }
+  return samplesSelectedStates;
+}
+
+/**
  * Go through the samples, and determine their current state with respect to
  * the selection.
  *
@@ -712,24 +774,31 @@ function mapCallNodeSelectedStatesToSamples(
  */
 export function getSamplesSelectedStates(
   callNodeInfo: CallNodeInfo,
-  sampleCallNodes: Array<IndexIntoCallNodeTable | null>,
-  activeTabFilteredCallNodes: Array<IndexIntoCallNodeTable | null>,
+  sampleNonInvertedCallNodes: Array<IndexIntoCallNodeTable | null>,
+  activeTabFilteredNonInvertedCallNodes: Array<IndexIntoCallNodeTable | null>,
   selectedCallNodeIndex: IndexIntoCallNodeTable | null
 ): SelectedState[] {
   if (selectedCallNodeIndex === null || selectedCallNodeIndex === -1) {
-    return getSamplesSelectedStatesForNoSelection(
-      sampleCallNodes,
-      activeTabFilteredCallNodes
+    return _getSamplesSelectedStatesForNoSelection(
+      sampleNonInvertedCallNodes,
+      activeTabFilteredNonInvertedCallNodes
     );
   }
 
-  const callNodeTable = callNodeInfo.getCallNodeTable();
-  return mapCallNodeSelectedStatesToSamples(
-    sampleCallNodes,
-    activeTabFilteredCallNodes,
-    selectedCallNodeIndex,
-    callNodeTable.subtreeRangeEnd[selectedCallNodeIndex]
-  );
+  const callNodeInfoInverted = callNodeInfo.asInverted();
+  return callNodeInfoInverted !== null
+    ? _getSamplesSelectedStatesInverted(
+        sampleNonInvertedCallNodes,
+        activeTabFilteredNonInvertedCallNodes,
+        selectedCallNodeIndex,
+        callNodeInfoInverted
+      )
+    : _getSamplesSelectedStatesNonInverted(
+        sampleNonInvertedCallNodes,
+        activeTabFilteredNonInvertedCallNodes,
+        selectedCallNodeIndex,
+        callNodeInfo
+      );
 }
 
 /**
@@ -786,7 +855,6 @@ export function getTimingsForPath(
   needlePath: CallNodePath,
   callNodeInfo: CallNodeInfo,
   interval: Milliseconds,
-  thread: Thread,
   unfilteredThread: Thread,
   sampleIndexOffset: number,
   categories: CategoryList,
@@ -798,7 +866,6 @@ export function getTimingsForPath(
     callNodeInfo.getCallNodeIndexFromPath(needlePath),
     callNodeInfo,
     interval,
-    thread,
     unfilteredThread,
     sampleIndexOffset,
     categories,
@@ -820,7 +887,6 @@ export function getTimingsForCallNodeIndex(
   needleNodeIndex: IndexIntoCallNodeTable | null,
   callNodeInfo: CallNodeInfo,
   interval: Milliseconds,
-  thread: Thread,
   unfilteredThread: Thread,
   sampleIndexOffset: number,
   categories: CategoryList,
@@ -830,9 +896,6 @@ export function getTimingsForCallNodeIndex(
 ): TimingsForPath {
   /* ------------ Variables definitions ------------*/
 
-  // This is the data from the filtered thread that we'll loop over.
-  const { stringTable } = thread;
-
   // This is the data from the unfiltered thread that we'll use to gather
   // category and JS implementation information. Note that samples are offset by
   // `sampleIndexOffset` because of range filtering.
@@ -840,6 +903,7 @@ export function getTimingsForCallNodeIndex(
     stackTable: unfilteredStackTable,
     funcTable: unfilteredFuncTable,
     frameTable: unfilteredFrameTable,
+    stringTable,
   } = unfilteredThread;
 
   // This holds the category index for the JavaScript category, so that we can
@@ -1010,51 +1074,78 @@ export function getTimingsForCallNodeIndex(
     return { forPath: pathTimings, rootTime };
   }
 
-  const callNodeTable = callNodeInfo.getCallNodeTable();
-  const stackIndexToCallNodeIndex = callNodeInfo.getStackIndexToCallNodeIndex();
+  const callNodeTable = callNodeInfo.getNonInvertedCallNodeTable();
+  const stackIndexToCallNodeIndex =
+    callNodeInfo.getStackIndexToNonInvertedCallNodeIndex();
+  const callNodeInfoInverted = callNodeInfo.asInverted();
+  if (callNodeInfoInverted !== null) {
+    // Inverted case
+    const needleNodeIsRootOfInvertedTree =
+      callNodeInfoInverted.isRoot(needleNodeIndex);
+    const suffixOrderIndexes = callNodeInfoInverted.getSuffixOrderIndexes();
+    const [rangeStart, rangeEnd] =
+      callNodeInfoInverted.getSuffixOrderIndexRangeForCallNode(needleNodeIndex);
 
-  const needleDescendantsEndIndex =
-    callNodeTable.subtreeRangeEnd[needleNodeIndex];
+    // Loop over each sample and accumulate the self time, running time, and
+    // the implementation breakdown.
+    for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex++) {
+      // Get the call node for this sample.
+      // TODO: Consider using sampleCallNodes for this, to save one indirection on
+      // a hot path.
+      const thisStackIndex = samples.stack[sampleIndex];
+      if (thisStackIndex === null) {
+        continue;
+      }
+      const thisNodeIndex = stackIndexToCallNodeIndex[thisStackIndex];
+      const thisNodeSuffixOrderIndex = suffixOrderIndexes[thisNodeIndex];
+      const weight = samples.weight ? samples.weight[sampleIndex] : 1;
+      rootTime += Math.abs(weight);
 
-  const isInvertedTree = callNodeInfo.isInverted();
-  const needleNodeIsRootOfInvertedTree =
-    isInvertedTree && callNodeTable.prefix[needleNodeIndex] === -1;
+      if (
+        thisNodeSuffixOrderIndex >= rangeStart &&
+        thisNodeSuffixOrderIndex < rangeEnd
+      ) {
+        // One of the parents is the exact passed path.
+        accumulateDataToTimings(pathTimings.totalTime, sampleIndex, weight);
 
-  // Loop over each sample and accumulate the self time, running time, and
-  // the implementation breakdown.
-  for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex++) {
-    // Get the call node for this sample.
-    // TODO: Consider using sampleCallNodes for this, to save one indirection on
-    // a hot path.
-    const thisStackIndex = samples.stack[sampleIndex];
-    if (thisStackIndex === null) {
-      continue;
+        if (needleNodeIsRootOfInvertedTree) {
+          // This root node matches the passed call node path.
+          // Just increment the selfTime value.
+          // We don't call accumulateDataToTimings(pathTimings.selfTime, ...)
+          // here, mainly because this would be the same as for the total time.
+          pathTimings.selfTime.value += weight;
+        }
+      }
     }
-    const thisNodeIndex = stackIndexToCallNodeIndex[thisStackIndex];
+  } else {
+    // Non-inverted case
+    const needleSubtreeRangeEnd =
+      callNodeTable.subtreeRangeEnd[needleNodeIndex];
 
-    const weight = samples.weight ? samples.weight[sampleIndex] : 1;
+    // Loop over each sample and accumulate the self time, running time, and
+    // the implementation breakdown.
+    for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex++) {
+      // Get the call node for this sample.
+      // TODO: Consider using sampleCallNodes for this, to save one indirection on
+      // a hot path.
+      const thisStackIndex = samples.stack[sampleIndex];
+      if (thisStackIndex === null) {
+        continue;
+      }
+      const thisNodeIndex = stackIndexToCallNodeIndex[thisStackIndex];
+      const weight = samples.weight ? samples.weight[sampleIndex] : 1;
+      rootTime += Math.abs(weight);
 
-    rootTime += Math.abs(weight);
-
-    if (!isInvertedTree) {
       // For non-inverted trees, we compute the self time from the stacks' leaf nodes.
       if (thisNodeIndex === needleNodeIndex) {
         accumulateDataToTimings(pathTimings.selfTime, sampleIndex, weight);
       }
-    }
-
-    if (
-      thisNodeIndex >= needleNodeIndex &&
-      thisNodeIndex < needleDescendantsEndIndex
-    ) {
-      // One of the parents is the exact passed path.
-      accumulateDataToTimings(pathTimings.totalTime, sampleIndex, weight);
-
-      if (needleNodeIsRootOfInvertedTree) {
-        // This root node matches the passed call node path.
-        // This is the only place where we don't accumulate timings, mainly
-        // because this would be the same as for the total time.
-        pathTimings.selfTime.value += weight;
+      if (
+        thisNodeIndex >= needleNodeIndex &&
+        thisNodeIndex < needleSubtreeRangeEnd
+      ) {
+        // One of the parents is the exact passed path.
+        accumulateDataToTimings(pathTimings.totalTime, sampleIndex, weight);
       }
     }
   }
@@ -1071,15 +1162,29 @@ export function getTimingsForCallNodeIndex(
 // When changing the signature, please accordingly check that the map class used
 // for memoization is still the right one.
 function _getTimeRangeForThread(
-  { samples, markers, jsAllocations, nativeAllocations }: Thread,
+  { samples, markers, jsAllocations, nativeAllocations }: RawThread,
   interval: Milliseconds
 ): StartEndRange {
   const result = { start: Infinity, end: -Infinity };
 
   if (samples.length) {
-    const lastSampleIndex = samples.length - 1;
-    result.start = samples.time[0];
-    result.end = samples.time[lastSampleIndex] + interval;
+    // We're dealing with the RawThread here, so we need to be able to handle
+    // sample times in both formats: as times or as deltas.
+    const { time, timeDeltas: maybeTimeDeltas } = samples;
+    if (time !== undefined) {
+      const lastSampleIndex = samples.length - 1;
+      result.start = time[0];
+      result.end = time[lastSampleIndex] + interval;
+    } else {
+      const timeDeltas = ensureExists(maybeTimeDeltas);
+      result.start = timeDeltas[0];
+
+      let accumTime = 0;
+      for (let i = 0; i < samples.length; i++) {
+        accumTime += timeDeltas[i];
+      }
+      result.end = accumTime + interval;
+    }
   } else if (markers.length) {
     // Looking at the markers only if there are no samples in the profile.
     // We need to look at those because it can be a marker only profile(no-sampling mode).
@@ -1185,7 +1290,7 @@ export function getTimeRangeIncludingAllThreads(
   return completeRange;
 }
 
-export function defaultThreadOrder(threads: Thread[]): ThreadIndex[] {
+export function defaultThreadOrder(threads: RawThread[]): ThreadIndex[] {
   const threadOrder = threads.map((thread, i) => i);
 
   // Note: to have a consistent behavior independant of the sorting algorithm,
@@ -1495,19 +1600,30 @@ export function filterThreadByTab(
   });
 }
 
+export function computeTimeColumnForRawSamplesTable(
+  samples: RawSamplesTable | RawCounterSamplesTable
+): number[] {
+  const { time, timeDeltas } = samples;
+  return time ?? numberSeriesFromDeltas(ensureExists(timeDeltas));
+}
+
 /**
  * Checks if a sample table has any useful samples.
  * A useful sample being one that isn't a "(root)" sample.
  */
 export function hasUsefulSamples(
-  table?: SamplesLikeTable,
-  thread: Thread
+  sampleStacks?: Array<IndexIntoStackTable | null>,
+  thread: RawThread
 ): boolean {
-  const { stackTable, frameTable, funcTable, stringTable } = thread;
-  if (table === undefined || table.length === 0 || stackTable.length === 0) {
+  const { stackTable, frameTable, funcTable, stringArray } = thread;
+  if (
+    sampleStacks === undefined ||
+    sampleStacks.length === 0 ||
+    stackTable.length === 0
+  ) {
     return false;
   }
-  const stackIndex = table.stack.find((stack) => stack !== null);
+  const stackIndex = sampleStacks.find((stack) => stack !== null);
   if (
     stackIndex === undefined ||
     stackIndex === null // We know that it can't be null at this point, but Flow doesn't.
@@ -1520,10 +1636,10 @@ export function hasUsefulSamples(
     const frameIndex = stackTable.frame[stackIndex];
     const funcIndex = frameTable.func[frameIndex];
     const stringIndex = funcTable.name[funcIndex];
-    if (stringTable.getString(stringIndex) === '(root)') {
+    if (stringArray[stringIndex] === '(root)') {
       // If the first sample's stack is only the root, check if any other
       // sample is different.
-      return table.stack.some((s) => s !== null && s !== stackIndex);
+      return sampleStacks.some((s) => s !== null && s !== stackIndex);
     }
   }
   return true;
@@ -1533,12 +1649,20 @@ export function hasUsefulSamples(
  * This function takes both a SamplesTable and can be used on CounterSamplesTable.
  */
 export function getSampleIndexRangeForSelection(
-  table: { time: Milliseconds[], length: number },
+  times: { time: Milliseconds[], length: number },
   rangeStart: number,
   rangeEnd: number
 ): [IndexIntoSamplesTable, IndexIntoSamplesTable] {
-  const sampleStart = bisectionLeft(table.time, rangeStart);
-  const sampleEnd = bisectionLeft(table.time, rangeEnd, sampleStart);
+  return getIndexRangeForSelection(times.time, rangeStart, rangeEnd);
+}
+
+export function getIndexRangeForSelection(
+  times: Milliseconds[],
+  rangeStart: number,
+  rangeEnd: number
+): [IndexIntoSamplesTable, IndexIntoSamplesTable] {
+  const sampleStart = bisectionLeft(times, rangeStart);
+  const sampleEnd = bisectionLeft(times, rangeEnd, sampleStart);
   return [sampleStart, sampleEnd];
 }
 
@@ -1552,8 +1676,16 @@ export function getInclusiveSampleIndexRangeForSelection(
   rangeStart: number,
   rangeEnd: number
 ): [IndexIntoSamplesTable, IndexIntoSamplesTable] {
-  let [sampleStart, sampleEnd] = getSampleIndexRangeForSelection(
-    table,
+  return getInclusiveIndexRangeForSelection(table.time, rangeStart, rangeEnd);
+}
+
+export function getInclusiveIndexRangeForSelection(
+  times: Milliseconds[],
+  rangeStart: number,
+  rangeEnd: number
+): [IndexIntoSamplesTable, IndexIntoSamplesTable] {
+  let [sampleStart, sampleEnd] = getIndexRangeForSelection(
+    times,
     rangeStart,
     rangeEnd
   );
@@ -1563,13 +1695,28 @@ export function getInclusiveSampleIndexRangeForSelection(
   if (sampleStart > 0) {
     sampleStart--;
   }
-  if (sampleEnd < table.length) {
+  if (sampleEnd < times.length) {
     sampleEnd++;
   }
 
   return [sampleStart, sampleEnd];
 }
 
+/**
+ * Return a thread whose samples (including allocation samples) have been
+ * filtered to include just those in the given time window.
+ *
+ * This function is used with the derived thread.
+ * It is used during the profile processing pipeline, in getRangeFilteredThread
+ * and getPreviewFilteredThread.
+ *
+ * It would be nice if we didn't have to compute a range filtered Thread. The
+ * consumers of the various samples tables should support limiting their processing
+ * to a provided sample index range. Then we would be able to remove this function.
+ *
+ * There is another version of this function, filterRawThreadSamplesToRange, which
+ * is used with the raw thread.
+ */
 export function filterThreadSamplesToRange(
   thread: Thread,
   rangeStart: number,
@@ -1603,8 +1750,8 @@ export function filterThreadSamplesToRange(
     );
   }
 
-  if (samples.threadCPUDelta) {
-    newSamples.threadCPUDelta = samples.threadCPUDelta.slice(
+  if (samples.threadCPURatio) {
+    newSamples.threadCPURatio = samples.threadCPURatio.slice(
       beginSampleIndex,
       endSampleIndex
     );
@@ -1688,26 +1835,156 @@ export function filterThreadSamplesToRange(
 }
 
 /**
+ * Return a RawThread whose samples (including allocation samples) have been
+ * filtered to include just those in the given time window.
+ *
+ * This function is used with the raw thread.
+ * It is used when creating a comparison profiles, and when creating a sanitized
+ * profile.
+ */
+export function filterRawThreadSamplesToRange(
+  thread: RawThread,
+  rangeStart: number,
+  rangeEnd: number
+): RawThread {
+  const { samples, jsAllocations, nativeAllocations } = thread;
+  const sampleTimes = computeTimeColumnForRawSamplesTable(samples);
+  const [beginSampleIndex, endSampleIndex] = getIndexRangeForSelection(
+    sampleTimes,
+    rangeStart,
+    rangeEnd
+  );
+  const newSamples: RawSamplesTable = {
+    length: endSampleIndex - beginSampleIndex,
+    time: sampleTimes.slice(beginSampleIndex, endSampleIndex),
+    weight: samples.weight
+      ? samples.weight.slice(beginSampleIndex, endSampleIndex)
+      : null,
+    weightType: samples.weightType,
+    stack: samples.stack.slice(beginSampleIndex, endSampleIndex),
+  };
+
+  if (samples.eventDelay) {
+    newSamples.eventDelay = samples.eventDelay.slice(
+      beginSampleIndex,
+      endSampleIndex
+    );
+  } else if (samples.responsiveness) {
+    newSamples.responsiveness = samples.responsiveness.slice(
+      beginSampleIndex,
+      endSampleIndex
+    );
+  }
+
+  if (samples.threadCPUDelta) {
+    newSamples.threadCPUDelta = samples.threadCPUDelta.slice(
+      beginSampleIndex,
+      endSampleIndex
+    );
+  }
+
+  if (samples.threadId) {
+    newSamples.threadId = samples.threadId.slice(
+      beginSampleIndex,
+      endSampleIndex
+    );
+  }
+
+  const newThread: RawThread = {
+    ...thread,
+    samples: newSamples,
+  };
+
+  if (jsAllocations) {
+    const [startAllocIndex, endAllocIndex] = getSampleIndexRangeForSelection(
+      jsAllocations,
+      rangeStart,
+      rangeEnd
+    );
+    newThread.jsAllocations = {
+      time: jsAllocations.time.slice(startAllocIndex, endAllocIndex),
+      className: jsAllocations.className.slice(startAllocIndex, endAllocIndex),
+      typeName: jsAllocations.typeName.slice(startAllocIndex, endAllocIndex),
+      coarseType: jsAllocations.coarseType.slice(
+        startAllocIndex,
+        endAllocIndex
+      ),
+      weight: jsAllocations.weight.slice(startAllocIndex, endAllocIndex),
+      weightType: jsAllocations.weightType,
+      inNursery: jsAllocations.inNursery.slice(startAllocIndex, endAllocIndex),
+      stack: jsAllocations.stack.slice(startAllocIndex, endAllocIndex),
+      length: endAllocIndex - startAllocIndex,
+    };
+  }
+
+  if (nativeAllocations) {
+    const [startAllocIndex, endAllocIndex] = getSampleIndexRangeForSelection(
+      nativeAllocations,
+      rangeStart,
+      rangeEnd
+    );
+    const time = nativeAllocations.time.slice(startAllocIndex, endAllocIndex);
+    const weight = nativeAllocations.weight.slice(
+      startAllocIndex,
+      endAllocIndex
+    );
+    const stack = nativeAllocations.stack.slice(startAllocIndex, endAllocIndex);
+    const length = endAllocIndex - startAllocIndex;
+    if (nativeAllocations.memoryAddress) {
+      newThread.nativeAllocations = {
+        time,
+        weight,
+        weightType: nativeAllocations.weightType,
+        stack,
+        memoryAddress: nativeAllocations.memoryAddress.slice(
+          startAllocIndex,
+          endAllocIndex
+        ),
+        threadId: nativeAllocations.threadId.slice(
+          startAllocIndex,
+          endAllocIndex
+        ),
+        length,
+      };
+    } else {
+      newThread.nativeAllocations = {
+        time,
+        weight,
+        weightType: nativeAllocations.weightType,
+        stack,
+        length,
+      };
+    }
+  }
+
+  return newThread;
+}
+
+/**
  * Filter the counter samples to the given range by iterating all of their sample groups.
  */
 export function filterCounterSamplesToRange(
-  counter: Counter,
+  counter: RawCounter,
   rangeStart: number,
   rangeEnd: number
-): Counter {
+): RawCounter {
   const newCounter = { ...counter };
   const { samples } = newCounter;
+  const timeColumn = computeTimeColumnForRawSamplesTable(samples);
 
   // Intentionally get the inclusive sample indexes with this one instead of
   // getSampleIndexRangeForSelection because graphs like memory graph requires
   // one sample before and after to be in the sample range so the graph doesn't
   // look cut off.
-  const [beginSampleIndex, endSampleIndex] =
-    getInclusiveSampleIndexRangeForSelection(samples, rangeStart, rangeEnd);
+  const [beginSampleIndex, endSampleIndex] = getInclusiveIndexRangeForSelection(
+    timeColumn,
+    rangeStart,
+    rangeEnd
+  );
 
   newCounter.samples = {
     length: endSampleIndex - beginSampleIndex,
-    time: samples.time.slice(beginSampleIndex, endSampleIndex),
+    time: timeColumn.slice(beginSampleIndex, endSampleIndex),
     count: samples.count.slice(beginSampleIndex, endSampleIndex),
     number: samples.number
       ? samples.number.slice(beginSampleIndex, endSampleIndex)
@@ -1720,11 +1997,11 @@ export function filterCounterSamplesToRange(
 /**
  * Process the samples in the counter.
  */
-export function processCounter(counter: Counter): Counter {
-  const { samples } = counter;
-  const count = samples.count.slice();
+export function processCounter(rawCounter: RawCounter): Counter {
+  const { samples: rawSamples } = rawCounter;
+  const count = rawSamples.count.slice();
   const number =
-    samples.number !== undefined ? samples.number.slice() : undefined;
+    rawSamples.number !== undefined ? rawSamples.number.slice() : undefined;
 
   // These lines zero out the first values of the counters, as they are unreliable. In
   // addition, there are probably some missed counts in the memory counters, so the
@@ -1739,14 +2016,25 @@ export function processCounter(counter: Counter): Counter {
     number[0] = 0;
   }
 
-  return {
-    ...counter,
-    samples: {
-      ...samples,
-      number,
-      count,
-    },
+  const samples: CounterSamplesTable = {
+    time: computeTimeColumnForRawSamplesTable(rawSamples),
+    number,
+    count,
+    length: rawSamples.length,
   };
+
+  const counter: Counter = {
+    name: rawCounter.name,
+    category: rawCounter.category,
+    description: rawCounter.description,
+    color: rawCounter.color,
+    pid: rawCounter.pid,
+    mainThreadIndex: rawCounter.mainThreadIndex,
+
+    samples,
+  };
+
+  return counter;
 }
 
 /**
@@ -2038,96 +2326,124 @@ export function computeCallNodeMaxDepthPlusOne(
   return maxDepth + 1;
 }
 
-function _computeThreadWithInvertedStackTable(
-  thread: Thread,
-  defaultCategory: IndexIntoCategoryList
-): {
-  invertedThread: Thread,
-  oldStackToNewStack: Map<IndexIntoStackTable, IndexIntoStackTable>,
-} {
-  return timeCode('_computeThreadWithInvertedStackTable', () => {
-    const { stackTable, frameTable } = thread;
+/**
+ * Compute the derived samples table.
+ */
+export function computeSamplesTableFromRawSamplesTable(
+  rawSamples: RawSamplesTable,
+  sampleUnits: SampleUnits | void,
+  referenceCPUDeltaPerMs: number
+): SamplesTable {
+  const {
+    responsiveness,
+    eventDelay,
+    stack,
+    weight,
+    weightType,
+    threadId,
+    length,
+  } = rawSamples;
 
-    const newStackTable = {
-      length: 0,
-      frame: [],
-      category: [],
-      subcategory: [],
-      prefix: [],
-    };
-    // Create a Map that keys off of two values, both the prefix and frame combination
-    // by using a bit of math: prefix * frameCount + frame => stackIndex
-    const prefixAndFrameToStack = new Map();
-    const frameCount = frameTable.length;
+  const timeDeltas =
+    rawSamples.time !== undefined
+      ? numberSeriesToDeltas(rawSamples.time)
+      : ensureExists(rawSamples.timeDeltas);
+  const threadCPURatio =
+    sampleUnits !== undefined
+      ? computeThreadCPURatio(
+          rawSamples,
+          sampleUnits,
+          timeDeltas,
+          referenceCPUDeltaPerMs
+        )
+      : undefined;
+  const time = computeTimeColumnForRawSamplesTable(rawSamples);
 
-    // Returns the stackIndex for a specific frame (that is, a function and its
-    // context), and a specific prefix. If it doesn't exist yet it will create
-    // a new stack entry and return its index.
-    function stackFor(prefix, frame, category, subcategory) {
-      const prefixAndFrameIndex =
-        (prefix === null ? -1 : prefix) * frameCount + frame;
-      let stackIndex = prefixAndFrameToStack.get(prefixAndFrameIndex);
-      if (stackIndex === undefined) {
-        stackIndex = newStackTable.length++;
-        newStackTable.prefix[stackIndex] = prefix;
-        newStackTable.frame[stackIndex] = frame;
-        newStackTable.category[stackIndex] = category;
-        newStackTable.subcategory[stackIndex] = subcategory;
-        prefixAndFrameToStack.set(prefixAndFrameIndex, stackIndex);
-      } else if (newStackTable.category[stackIndex] !== category) {
-        // If two stack nodes from the non-inverted stack tree with different
-        // categories happen to collapse into the same stack node in the
-        // inverted tree, discard their category and set the category to the
-        // default category.
-        newStackTable.category[stackIndex] = defaultCategory;
-        newStackTable.subcategory[stackIndex] = 0;
-      } else if (newStackTable.subcategory[stackIndex] !== subcategory) {
-        // If two stack nodes from the non-inverted stack tree with the same
-        // category but different subcategories happen to collapse into the same
-        // stack node in the inverted tree, discard their subcategory and set it
-        // to the "Other" subcategory.
-        newStackTable.subcategory[stackIndex] = 0;
-      }
-      return stackIndex;
-    }
+  return {
+    // These fields are copied from the raw samples table:
+    responsiveness,
+    eventDelay,
+    stack,
+    weight,
+    weightType,
+    threadId,
+    length,
 
-    const oldStackToNewStack = new Map();
+    // These fields are derived:
+    time,
+    threadCPURatio,
+  };
+}
 
-    // For one specific stack, this will ensure that stacks are created for all
-    // of its ancestors, by walking its prefix chain up to the root.
-    function convertStack(stackIndex) {
-      if (stackIndex === null) {
-        return null;
-      }
-      let newStack = oldStackToNewStack.get(stackIndex);
-      if (newStack === undefined) {
-        newStack = null;
-        for (
-          let currentStack = stackIndex;
-          currentStack !== null;
-          currentStack = stackTable.prefix[currentStack]
-        ) {
-          // Notice how we reuse the previous stack as the prefix. This is what
-          // effectively inverts the call tree.
-          newStack = stackFor(
-            newStack,
-            stackTable.frame[currentStack],
-            stackTable.category[currentStack],
-            stackTable.subcategory[currentStack]
-          );
-        }
-        oldStackToNewStack.set(stackIndex, ensureExists(newStack));
-      }
-      return newStack;
-    }
+/**
+ * Create the derived Thread.
+ */
+export function createThreadFromDerivedTables(
+  rawThread: RawThread,
+  samples: SamplesTable,
+  stackTable: StackTable,
+  stringTable: StringTable
+): Thread {
+  const {
+    processType,
+    processStartupTime,
+    processShutdownTime,
+    registerTime,
+    unregisterTime,
+    pausedRanges,
+    showMarkersInTimeline,
+    name,
+    isMainThread,
+    'eTLD+1': eTldPlusOne,
+    processName,
+    isJsTracer,
+    pid,
+    tid,
+    jsAllocations,
+    nativeAllocations,
+    markers,
+    frameTable,
+    funcTable,
+    resourceTable,
+    nativeSymbols,
+    jsTracer,
+    isPrivateBrowsing,
+    userContextId,
+  } = rawThread;
 
-    const invertedThread = updateThreadStacks(
-      thread,
-      newStackTable,
-      convertStack
-    );
-    return { invertedThread, oldStackToNewStack };
-  });
+  const thread: Thread = {
+    // These fields are copied from the raw thread:
+    processType,
+    processStartupTime,
+    processShutdownTime,
+    registerTime,
+    unregisterTime,
+    pausedRanges,
+    showMarkersInTimeline,
+    name,
+    isMainThread,
+    'eTLD+1': eTldPlusOne,
+    processName,
+    isJsTracer,
+    pid,
+    tid,
+    jsAllocations,
+    nativeAllocations,
+    markers,
+    frameTable,
+    funcTable,
+    resourceTable,
+    nativeSymbols,
+    jsTracer,
+    isPrivateBrowsing,
+    userContextId,
+
+    // These fields are derived:
+    samples,
+    stackTable,
+    stringTable,
+  };
+  return thread;
 }
 
 /**
@@ -2135,6 +2451,9 @@ function _computeThreadWithInvertedStackTable(
  * for a text string, or doing a call tree transformation. This function abstracts
  * out the manipulation of the data structures so that we can properly update
  * the stack table and any possible allocation information.
+ *
+ * This function acts on the derived thread, and is used in the transformation
+ * pipeline.
  */
 export function updateThreadStacksByGeneratingNewStackColumns(
   thread: Thread,
@@ -2198,13 +2517,54 @@ export function updateThreadStacksByGeneratingNewStackColumns(
  * A simpler variant of updateThreadStacksByGeneratingNewStackColumns which just
  * accepts a convertStack function. Use this when you don't need to filter by
  * sample timestamp.
+ *
+ * This function acts on the derived thread, and is used in the transformation
+ * pipeline.
  */
 export function updateThreadStacks(
   thread: Thread,
   newStackTable: StackTable,
   convertStack: (IndexIntoStackTable | null) => IndexIntoStackTable | null
 ): Thread {
-  return updateThreadStacksSeparate(
+  function convertMarkerData(
+    oldData: MarkerPayload | null
+  ): MarkerPayload | null {
+    if (oldData && 'cause' in oldData && oldData.cause) {
+      // Replace the cause with the right stack index.
+      // $FlowExpectError Flow is failing to refine oldData.type based on the `cause` field check
+      return {
+        ...oldData,
+        cause: {
+          ...oldData.cause,
+          stack: convertStack(oldData.cause.stack),
+        },
+      };
+    }
+    return oldData;
+  }
+
+  return updateThreadStacksByGeneratingNewStackColumns(
+    thread,
+    newStackTable,
+    (stackColumn, _timeColumn) =>
+      stackColumn.map((oldStack) => convertStack(oldStack)),
+    (stackColumn, _timeColumn) =>
+      stackColumn.map((oldStack) => convertStack(oldStack)),
+    (markerDataColumn) => markerDataColumn.map(convertMarkerData)
+  );
+}
+
+/**
+ * Updates the stackTable and all references to stacks in the raw thread.
+ *
+ * This function is used by symbolication, which acts on the raw thread.
+ */
+export function updateRawThreadStacks(
+  thread: RawThread,
+  newStackTable: RawStackTable,
+  convertStack: (IndexIntoStackTable | null) => IndexIntoStackTable | null
+): RawThread {
+  return updateRawThreadStacksSeparate(
     thread,
     newStackTable,
     convertStack,
@@ -2213,21 +2573,24 @@ export function updateThreadStacks(
 }
 
 /**
- * Like updateThreadStacks, but accepts separate functions for converting sample
+ * Like updateRawThreadStacks, but accepts separate functions for converting sample
  * stacks and sync backtrace stacks. There is only one reason to treat the two
  * differently: Sample stacks start with a frame address which was sampled from
  * the instruction pointer, and sync backtrace stacks start with a frame address
  * that was originally derived from a return address (because there were other
  * frames on the native stack which have been stripped).
+ *
+ * This function is used during profile processing and by symbolication, both of
+ * which act on the raw thread.
  */
-export function updateThreadStacksSeparate(
-  thread: Thread,
-  newStackTable: StackTable,
+export function updateRawThreadStacksSeparate(
+  thread: RawThread,
+  newStackTable: RawStackTable,
   convertStack: (IndexIntoStackTable | null) => IndexIntoStackTable | null,
   convertSyncBacktraceStack: (
     IndexIntoStackTable | null
   ) => IndexIntoStackTable | null
-): Thread {
+): RawThread {
   function convertMarkerData(
     oldData: MarkerPayload | null
   ): MarkerPayload | null {
@@ -2245,15 +2608,41 @@ export function updateThreadStacksSeparate(
     return oldData;
   }
 
-  return updateThreadStacksByGeneratingNewStackColumns(
-    thread,
-    newStackTable,
-    (stackColumn, _timeColumn) =>
-      stackColumn.map((oldStack) => convertStack(oldStack)),
-    (stackColumn, _timeColumn) =>
-      stackColumn.map((oldStack) => convertSyncBacktraceStack(oldStack)),
-    (markerDataColumn) => markerDataColumn.map(convertMarkerData)
-  );
+  const { jsAllocations, nativeAllocations, samples, markers } = thread;
+
+  const newSamples = {
+    ...samples,
+    stack: samples.stack.map(convertStack),
+  };
+
+  const newMarkers = {
+    ...markers,
+    data: markers.data.map(convertMarkerData),
+  };
+
+  const newThread = {
+    ...thread,
+    samples: newSamples,
+    markers: newMarkers,
+    stackTable: newStackTable,
+  };
+
+  if (jsAllocations) {
+    // Map the JS allocations stacks if there are any.
+    newThread.jsAllocations = {
+      ...jsAllocations,
+      stack: jsAllocations.stack.map(convertSyncBacktraceStack),
+    };
+  }
+  if (nativeAllocations) {
+    // Map the native allocations stacks if there are any.
+    newThread.nativeAllocations = {
+      ...nativeAllocations,
+      stack: nativeAllocations.stack.map(convertSyncBacktraceStack),
+    };
+  }
+
+  return newThread;
 }
 
 /**
@@ -2322,46 +2711,56 @@ export function getSampleIndexClosestToStartTime(
  * uses the adjusted time. In this context, adjusted time means that `time` array
  * represent the "center" of the sample, and raw values represent the "start" of
  * the sample.
+ *
+ * Additionally it also checks for a maxTimeDistance threshold. If the time to
+ * sample distance is higher than that, it just returns null, which indicates
+ * no sample found.
  */
 export function getSampleIndexClosestToCenteredTime(
   samples: SamplesTable,
-  time: number
-): IndexIntoSamplesTable {
+  time: number,
+  maxTimeDistance: number
+): IndexIntoSamplesTable | null {
+  // Helper function to compute the "center" of a sample
+  const getCenterTime = (index: number): number => {
+    if (samples.weight) {
+      return samples.time[index] + Math.abs(samples.weight[index]) / 2;
+    }
+    return samples.time[index];
+  };
+
   // Bisect to find the index of the first sample after the provided time.
   const index = bisectionRight(samples.time, time);
 
   if (index === 0) {
-    return 0;
+    // Time is before the first sample
+    return maxTimeDistance >= Math.abs(getCenterTime(0) - time) ? 0 : null;
   }
 
-  if (index === samples.length) {
-    return samples.length - 1;
+  if (index === samples.time.length) {
+    // Time is after the last sample
+    const lastIndex = samples.time.length - 1;
+    return maxTimeDistance >= Math.abs(getCenterTime(lastIndex) - time)
+      ? lastIndex
+      : null;
   }
 
-  // Check the distance between the provided time and the center of the bisected sample
-  // and its predecessor.
-  const previousIndex = index - 1;
-  let distanceToThis;
-  let distanceToLast;
+  // Calculate distances to the centered time for both the current and previous samples
+  const distanceToNext = Math.abs(getCenterTime(index) - time);
+  const distanceToPrevious = Math.abs(getCenterTime(index - 1) - time);
 
-  if (samples.weight) {
-    const samplesWeight = samples.weight;
-    const weight = Math.abs(samplesWeight[index]);
-    const previousWeight = Math.abs(samplesWeight[previousIndex]);
-
-    distanceToThis = samples.time[index] + weight / 2 - time;
-    distanceToLast = time - (samples.time[previousIndex] + previousWeight / 2);
-  } else {
-    distanceToThis = samples.time[index] - time;
-    distanceToLast = time - samples.time[previousIndex];
+  if (distanceToNext <= distanceToPrevious) {
+    // If `distanceToNext` is closer but exceeds `maxTimeDistance`, return null.
+    return distanceToNext <= maxTimeDistance ? index : null;
   }
 
-  return distanceToThis < distanceToLast ? index : index - 1;
+  // Otherwise, `distanceToPrevious` is closer. Again check if it exceeds `maxTimeDistance`.
+  return distanceToPrevious <= maxTimeDistance ? index - 1 : null;
 }
 
 export function getFriendlyThreadName(
-  threads: Thread[],
-  thread: Thread
+  threads: RawThread[],
+  thread: RawThread
 ): string {
   let label;
   let homonymThreads;
@@ -2494,7 +2893,7 @@ export function getOriginAnnotationForFunc(
   funcIndex: IndexIntoFuncTable,
   funcTable: FuncTable,
   resourceTable: ResourceTable,
-  stringTable: UniqueStringArray,
+  stringTable: StringTable,
   frameLineNumber: number | null = null,
   frameColumnNumber: number | null = null
 ): string {
@@ -2649,6 +3048,19 @@ export function getFuncNamesAndOriginsForPath(
  * highlighted area for a selected subtree is contiguous in the graph.
  */
 export function getTreeOrderComparator(
+  sampleNonInvertedCallNodes: Array<IndexIntoCallNodeTable | null>,
+  callNodeInfo: CallNodeInfo
+): (IndexIntoSamplesTable, IndexIntoSamplesTable) => number {
+  const callNodeInfoInverted = callNodeInfo.asInverted();
+  return callNodeInfoInverted !== null
+    ? _getTreeOrderComparatorInverted(
+        sampleNonInvertedCallNodes,
+        callNodeInfoInverted
+      )
+    : _getTreeOrderComparatorNonInverted(sampleNonInvertedCallNodes);
+}
+
+export function _getTreeOrderComparatorNonInverted(
   sampleCallNodes: Array<IndexIntoCallNodeTable | null>
 ): (IndexIntoSamplesTable, IndexIntoSamplesTable) => number {
   /**
@@ -2679,6 +3091,38 @@ export function getTreeOrderComparator(
       return -1;
     }
     return callNodeA - callNodeB;
+  };
+}
+
+function _getTreeOrderComparatorInverted(
+  sampleNonInvertedCallNodes: Array<IndexIntoCallNodeTable | null>,
+  callNodeInfo: CallNodeInfoInverted
+): (IndexIntoSamplesTable, IndexIntoSamplesTable) => number {
+  const callNodeTable = callNodeInfo.getNonInvertedCallNodeTable();
+  return function treeOrderComparator(
+    sampleA: IndexIntoSamplesTable,
+    sampleB: IndexIntoSamplesTable
+  ): number {
+    const callNodeA = sampleNonInvertedCallNodes[sampleA];
+    const callNodeB = sampleNonInvertedCallNodes[sampleB];
+
+    if (callNodeA === callNodeB) {
+      // Both are filtered out or both are the same.
+      return 0;
+    }
+    if (callNodeA === null) {
+      // A filtered out, B not filtered out. A goes after B.
+      return 1;
+    }
+    if (callNodeB === null) {
+      // B filtered out, A not filtered out. B goes after A.
+      return -1;
+    }
+    return _compareNonInvertedCallNodesInSuffixOrder(
+      callNodeA,
+      callNodeB,
+      callNodeTable
+    );
   };
 }
 
@@ -2729,35 +3173,19 @@ export function getCategoryPairLabel(
 export function filterToAllocations(
   nativeAllocations: NativeAllocationsTable
 ): NativeAllocationsTable {
-  let newNativeAllocations;
-  if (nativeAllocations.memoryAddress) {
-    newNativeAllocations = getEmptyBalancedNativeAllocationsTable();
-    for (let i = 0; i < nativeAllocations.length; i++) {
-      const weight = nativeAllocations.weight[i];
-      if (weight > 0) {
-        newNativeAllocations.time.push(nativeAllocations.time[i]);
-        newNativeAllocations.stack.push(nativeAllocations.stack[i]);
-        newNativeAllocations.weight.push(weight);
-        newNativeAllocations.memoryAddress.push(
-          nativeAllocations.memoryAddress[i]
-        );
-        newNativeAllocations.threadId.push(nativeAllocations.threadId[i]);
-        newNativeAllocations.length++;
-      }
-    }
-  } else {
-    newNativeAllocations = getEmptyUnbalancedNativeAllocationsTable();
-    for (let i = 0; i < nativeAllocations.length; i++) {
-      const weight = nativeAllocations.weight[i];
-      if (weight > 0) {
-        newNativeAllocations.time.push(nativeAllocations.time[i]);
-        newNativeAllocations.stack.push(nativeAllocations.stack[i]);
-        newNativeAllocations.weight.push(weight);
-        newNativeAllocations.length++;
-      }
+  const filteredStackCol = nativeAllocations.stack.slice();
+  for (let i = 0; i < nativeAllocations.length; i++) {
+    const weight = nativeAllocations.weight[i];
+    if (weight <= 0) {
+      // Not an allocation, null out the sample's stack.
+      filteredStackCol[i] = null;
     }
   }
-  return newNativeAllocations;
+
+  return {
+    ...nativeAllocations,
+    stack: filteredStackCol,
+  };
 }
 
 /**
@@ -2767,35 +3195,19 @@ export function filterToAllocations(
 export function filterToDeallocationsSites(
   nativeAllocations: NativeAllocationsTable
 ): NativeAllocationsTable {
-  let newNativeAllocations;
-  if (nativeAllocations.memoryAddress) {
-    newNativeAllocations = getEmptyBalancedNativeAllocationsTable();
-    for (let i = 0; i < nativeAllocations.length; i++) {
-      const weight = nativeAllocations.weight[i];
-      if (weight < 0) {
-        newNativeAllocations.time.push(nativeAllocations.time[i]);
-        newNativeAllocations.stack.push(nativeAllocations.stack[i]);
-        newNativeAllocations.weight.push(weight);
-        newNativeAllocations.memoryAddress.push(
-          nativeAllocations.memoryAddress[i]
-        );
-        newNativeAllocations.threadId.push(nativeAllocations.threadId[i]);
-        newNativeAllocations.length++;
-      }
-    }
-  } else {
-    newNativeAllocations = getEmptyUnbalancedNativeAllocationsTable();
-    for (let i = 0; i < nativeAllocations.length; i++) {
-      const weight = nativeAllocations.weight[i];
-      if (weight < 0) {
-        newNativeAllocations.time.push(nativeAllocations.time[i]);
-        newNativeAllocations.stack.push(nativeAllocations.stack[i]);
-        newNativeAllocations.weight.push(weight);
-        newNativeAllocations.length++;
-      }
+  const filteredStackCol = nativeAllocations.stack.slice();
+  for (let i = 0; i < nativeAllocations.length; i++) {
+    const weight = nativeAllocations.weight[i];
+    if (weight >= 0) {
+      // Not a deallocation, null out the sample's stack.
+      filteredStackCol[i] = null;
     }
   }
-  return newNativeAllocations;
+
+  return {
+    ...nativeAllocations,
+    stack: filteredStackCol,
+  };
 }
 
 /**
@@ -2810,7 +3222,7 @@ export function filterToDeallocationsMemory(
 
   // This is like a Map<MemoryAddress, IndexIntoStackTable | null>;
   const memoryAddressToAllocationSite: Array<IndexIntoStackTable | null> = [];
-  const newDeallocations = getEmptyBalancedNativeAllocationsTable();
+  const filteredStackCol = nativeAllocations.stack.slice();
 
   for (
     let allocationIndex = 0;
@@ -2832,40 +3244,40 @@ export function filterToDeallocationsMemory(
       }
       memoryAddressToAllocationSite[memoryAddress] =
         nativeAllocations.stack[allocationIndex];
-      continue;
+      filteredStackCol[allocationIndex] = null;
+    } else {
+      // This is a deallocation.
+      // Lookup the previous allocation.
+      const allocationStackIndex = memoryAddressToAllocationSite[memoryAddress];
+      if (allocationStackIndex === undefined) {
+        // This deallocation doesn't match an allocation. Let's bail out.
+        filteredStackCol[allocationIndex] = null;
+      } else {
+        // This deallocation matches a previous allocation. Keep the sample and
+        // change the stack to the allocation stack.
+        filteredStackCol[allocationIndex] = allocationStackIndex;
+
+        // Remove the saved allocation
+        delete memoryAddressToAllocationSite[memoryAddress];
+      }
     }
-
-    // This is a deallocation.
-    // Lookup the previous allocation.
-    const allocationStackIndex = memoryAddressToAllocationSite[memoryAddress];
-    if (allocationStackIndex === undefined) {
-      // This deallocation doesn't match an allocation. Let's bail out.
-      continue;
-    }
-
-    // This deallocation matches a previous allocation.
-    newDeallocations.time.push(nativeAllocations.time[allocationIndex]);
-    newDeallocations.stack.push(allocationStackIndex);
-    newDeallocations.weight.push(bytes);
-    newDeallocations.memoryAddress.push(memoryAddress);
-    newDeallocations.threadId.push(nativeAllocations.threadId[allocationIndex]);
-    newDeallocations.length++;
-
-    // Remove the saved allocation
-    delete memoryAddressToAllocationSite[memoryAddress];
   }
 
-  return newDeallocations;
+  return {
+    ...nativeAllocations,
+    stack: filteredStackCol,
+  };
 }
 
 /**
- * Currently the native allocations naively collect allocations and deallocations.
- * There is no attempt to match up the sampled allocations with the deallocations.
- * Because of this, if a calltree were to combine both allocations and deallocations,
- * then the summary would most likely lie and not misreport leaked or retained memory.
- * For now, filter to only showing allocations or deallocations.
+ * Keeps the samples for any allocations of memory addresses for which we don't
+ * have a deallocation sample. Does not keep any deallocation samples.
  *
- * This function filters to only positive values.
+ * This is used when you want to know how much memory is still around at the
+ * end of the selected range, and where this memory was allocated.
+ *
+ * The returned table has the same length and indexes as the `nativeAllocations`
+ * argument.
  */
 export function filterToRetainedAllocations(
   nativeAllocations: BalancedNativeAllocationsTable
@@ -2875,7 +3287,7 @@ export function filterToRetainedAllocations(
   type IndexIntoAllocations = number;
   const memoryAddressToAllocation: Map<Address, IndexIntoAllocations> =
     new Map();
-  const retainedAllocation = [];
+  const filteredStackCol = nativeAllocations.stack.slice();
   for (
     let allocationIndex = 0;
     allocationIndex < nativeAllocations.length;
@@ -2888,112 +3300,127 @@ export function filterToRetainedAllocations(
 
       // Provide a map back to this index.
       memoryAddressToAllocation.set(memoryAddress, allocationIndex);
-      retainedAllocation[allocationIndex] = true;
     } else {
-      // Do not retain deallocations.
-      retainedAllocation[allocationIndex] = false;
+      // Null out the stack for deallocation samples.
+      filteredStackCol[allocationIndex] = null;
 
       // Lookup the previous allocation.
       const previousAllocationIndex =
         memoryAddressToAllocation.get(memoryAddress);
       if (previousAllocationIndex !== undefined) {
-        // This deallocation matches a previous allocation. Remove the allocation.
-        retainedAllocation[previousAllocationIndex] = false;
+        // This deallocation matches a previous allocation. Null out the
+        // corresponding allocation sample.
+        filteredStackCol[previousAllocationIndex] = null;
         // There is a match, so delete this old association.
         memoryAddressToAllocation.delete(memoryAddress);
       }
     }
   }
 
-  const newNativeAllocations = getEmptyBalancedNativeAllocationsTable();
-  for (let i = 0; i < nativeAllocations.length; i++) {
-    const weight = nativeAllocations.weight[i];
-    if (retainedAllocation[i]) {
-      newNativeAllocations.time.push(nativeAllocations.time[i]);
-      newNativeAllocations.stack.push(nativeAllocations.stack[i]);
-      newNativeAllocations.weight.push(weight);
-      newNativeAllocations.memoryAddress.push(
-        nativeAllocations.memoryAddress[i]
-      );
-      newNativeAllocations.threadId.push(nativeAllocations.threadId[i]);
-      newNativeAllocations.length++;
-    }
-  }
-
-  return newNativeAllocations;
+  return {
+    ...nativeAllocations,
+    stack: filteredStackCol,
+  };
 }
 
 /**
- * Extract the hostname and favicon from the first page if we are in single tab
- * view. Currently we assume that we don't change the origin of webpages while
- * profiling in web developer preset. That's why we are simply getting the first
- * page we find that belongs to the active tab. Returns null if profiler is not
- * in the single tab view at the moment.
+ * Extract the hostname and favicon from the last page for all tab ids. we
+ * assume that the user wants to know about the last loaded page in this tab.
+ * Returns null if we don't have information about pages (in older profiles).
  */
 export function extractProfileFilterPageData(
-  pages: PageList | null,
-  relevantPages: Set<InnerWindowID>
-): ProfileFilterPageData | null {
-  if (relevantPages.size === 0 || pages === null) {
-    // Either we are not in single tab view, or we don't have pages array(which
-    // is the case for older profiles). Return early.
-    return null;
+  pagesMapByTabID: Map<TabID, PageList> | null,
+  extensionIDToNameMap: Map<string, string> | null
+): Map<TabID, ProfileFilterPageData> {
+  if (pagesMapByTabID === null) {
+    // We don't have pages array (which is the case for older profiles). Return early.
+    return new Map();
   }
 
-  // Getting the pages that are relevant and a top-most frame.
-  let filteredPages = pages.filter(
-    (page) =>
-      // It's the top-most frame if `embedderInnerWindowID` is zero.
-      page.embedderInnerWindowID === 0 && relevantPages.has(page.innerWindowID)
-  );
-
-  if (filteredPages.length > 1) {
-    // If there are more than one top-most page, it's also good to filter out the
-    // `about:` pages so user can see their url they are actually profiling.
-    filteredPages = filteredPages.filter(
-      (page) => !page.url.startsWith('about:')
+  const pageDataByTabID = new Map();
+  for (const [tabID, pages] of pagesMapByTabID) {
+    let topMostPages = pages.filter(
+      (page) =>
+        // It's the top-most frame if `embedderInnerWindowID` is zero.
+        page.embedderInnerWindowID === 0
     );
-  }
 
-  if (filteredPages.length === 0) {
-    // There should be at least one relevant page.
-    console.error(`Expected a relevant page but couldn't find it.`);
-    return null;
-  }
-
-  const pageUrl = filteredPages[0].url;
-
-  if (pageUrl.startsWith('about:')) {
-    // If we only have an `about:*` page, we should return early with a friendly
-    // origin and hostname. Otherwise the try block will fail.
-    return {
-      origin: pageUrl,
-      hostname: pageUrl,
-      favicon: null,
-    };
-  }
-
-  try {
-    const page = new URL(pageUrl);
-    // FIXME(Bug 1620546): This is not ideal and we should get the favicon
-    // either during profile capture or profile pre-process.
-    const favicon = new URL('/favicon.ico', page.origin);
-    if (favicon.protocol === 'http:') {
-      // Upgrade http requests.
-      favicon.protocol = 'https:';
+    if (topMostPages.length > 1) {
+      // If there are more than one top-most page, it's also good to filter out the
+      // `about:` pages so user can see their url they are actually profiling.
+      topMostPages = topMostPages.filter(
+        (page) => !page.url.startsWith('about:')
+      );
     }
-    return {
-      origin: page.origin,
-      hostname: page.hostname,
-      favicon: favicon.href,
+
+    if (topMostPages.length === 0) {
+      // There should be at least one topmost page.
+      console.error(
+        `Expected at least one topmost page for tabID ${tabID} but couldn't find it.`
+      );
+      continue;
+    }
+
+    // The last page is the one we care about.
+    const currentPage = topMostPages[topMostPages.length - 1];
+    const pageUrl = currentPage.url;
+    if (pageUrl.startsWith('about:')) {
+      // If we only have an `about:*` page, we should return early with a friendly
+      // origin and hostname. Otherwise the try block will always fail.
+      pageDataByTabID.set(tabID, {
+        origin: pageUrl,
+        hostname: pageUrl,
+        favicon: DefaultLinkFavicon,
+      });
+      continue;
+    }
+
+    // Constructing the page data outside of the try-catch block, and adding it
+    // to the map outside of it as well. This is mostly because some favicon URL
+    // constructions might fail and we don't want to miss them still. We should
+    // always have at least a hostname, which is needed for displaying the tab
+    // name.
+    // The known failing case is when we try to construct a URL with a
+    // moz-extension:// protocol on platforms outside of Firefox. Only Firefox
+    // can parse it properly. Chrome and node will output a URL with no `origin`.
+    const isExtension = pageUrl.startsWith('moz-extension://');
+    const defaultFavicon = isExtension ? ExtensionFavicon : DefaultLinkFavicon;
+    const pageData: ProfileFilterPageData = {
+      origin: '',
+      hostname: '',
+      favicon: currentPage.favicon ?? defaultFavicon,
     };
-  } catch (e) {
-    console.error(
-      'Error while extracing the hostname and favicon from the page url',
-      pageUrl
-    );
-    return null;
+
+    try {
+      const page = new URL(pageUrl);
+
+      pageData.hostname =
+        extensionIDToNameMap && isExtension
+          ? // Get the real extension name if it's an extension.
+            (extensionIDToNameMap.get(
+              'moz-extension://' +
+                // For non-Firefox browsers, we can't construct a URL object
+                // with the 'moz-extension://' protocol properly. So we have to
+                // have a fallback that uses simple string split.
+                (page.hostname ? page.hostname : pageUrl.split('/')[2]) +
+                '/'
+            ) ?? '')
+          : page.hostname;
+
+      pageData.origin = page.origin;
+    } catch (e) {
+      console.warn(
+        'Error while extracing the hostname and favicon from the page url',
+        pageUrl
+      );
+    }
+
+    // Adding it to the map outside of the try-catch block, just in case something
+    // might fail.
+    pageDataByTabID.set(tabID, pageData);
   }
+
+  return pageDataByTabID;
 }
 
 // Returns the resource index for a "url" or "webhost" resource which is created
@@ -3001,7 +3428,7 @@ export function extractProfileFilterPageData(
 export function getOrCreateURIResource(
   scriptURI: string,
   resourceTable: ResourceTable,
-  stringTable: UniqueStringArray,
+  stringTable: StringTable,
   originToResourceIndex: Map<string, IndexIntoResourceTable>
 ): IndexIntoResourceTable {
   // Figure out the origin and host.
@@ -3101,7 +3528,7 @@ export type StackReferences = {|
  * samples, and stacks referenced by sync backtraces (e.g. marker causes).
  * The two have slightly different properties, see the type definition.
  */
-export function gatherStackReferences(thread: Thread): StackReferences {
+export function gatherStackReferences(thread: RawThread): StackReferences {
   const samplingSelfStacks = new Set();
   const syncBacktraceSelfStacks = new Set();
 
@@ -3272,7 +3699,7 @@ export function gatherStackReferences(thread: Thread): StackReferences {
  *     used in both contexts. If we detect that this happened, we need to duplicate
  *     the frame and the stack node and pick the right one depending on the use.
  */
-export function nudgeReturnAddresses(thread: Thread): Thread {
+export function nudgeReturnAddresses(thread: RawThread): RawThread {
   const { samplingSelfStacks, syncBacktraceSelfStacks } =
     gatherStackReferences(thread);
 
@@ -3367,14 +3794,12 @@ export function nudgeReturnAddresses(thread: Thread): Thread {
   // Now the frame table contains adjusted / "nudged" addresses.
 
   // Make a new stack table which refers to the adjusted frames.
-  const newStackTable = getEmptyStackTable();
+  const newStackTable = getEmptyRawStackTable();
   const mapForSamplingSelfStacks = new Map();
   const mapForBacktraceSelfStacks = new Map();
   const prefixMap = new Uint32Array(stackTable.length);
   for (let stack = 0; stack < stackTable.length; stack++) {
     const frame = stackTable.frame[stack];
-    const category = stackTable.category[stack];
-    const subcategory = stackTable.subcategory[stack];
     const prefix = stackTable.prefix[stack];
 
     const newPrefix = prefix === null ? null : prefixMap[prefix];
@@ -3384,8 +3809,6 @@ export function nudgeReturnAddresses(thread: Thread): Thread {
       // (which will have the nudged address if this is a return address stack).
       const newStackIndex = newStackTable.length;
       newStackTable.frame.push(frame);
-      newStackTable.category.push(category);
-      newStackTable.subcategory.push(subcategory);
       newStackTable.prefix.push(newPrefix);
       newStackTable.length++;
       prefixMap[stack] = newStackIndex;
@@ -3398,20 +3821,18 @@ export function nudgeReturnAddresses(thread: Thread): Thread {
       const ipFrame = oldIpFrameToNewIpFrame[frame];
       const newStackIndex = newStackTable.length;
       newStackTable.frame.push(ipFrame);
-      newStackTable.category.push(category);
-      newStackTable.subcategory.push(subcategory);
       newStackTable.prefix.push(newPrefix);
       newStackTable.length++;
       mapForSamplingSelfStacks.set(stack, newStackIndex);
     }
   }
 
-  const newThread = {
+  const newThread: RawThread = {
     ...thread,
     frameTable: newFrameTable,
   };
 
-  return updateThreadStacksSeparate(
+  return updateRawThreadStacksSeparate(
     newThread,
     newStackTable,
     getMapStackUpdater(mapForSamplingSelfStacks),
@@ -3429,7 +3850,8 @@ export function findAddressProofForFile(
 ): AddressProof | null {
   const { libs } = profile;
   for (const thread of profile.threads) {
-    const { frameTable, funcTable, resourceTable, stringTable } = thread;
+    const { frameTable, funcTable, resourceTable, stringArray } = thread;
+    const stringTable = StringTable.withBackingArray(stringArray);
     const fileStringIndex = stringTable.indexForString(file);
     const func = funcTable.fileName.indexOf(fileStringIndex);
     if (func === -1) {
@@ -3501,20 +3923,20 @@ export function getNativeSymbolsForCallNode(
   stackTable: StackTable,
   frameTable: FrameTable
 ): IndexIntoNativeSymbolTable[] {
-  if (callNodeInfo.isInverted()) {
-    return getNativeSymbolsForCallNodeInverted(
-      callNodeIndex,
-      callNodeInfo,
-      stackTable,
-      frameTable
-    );
-  }
-  return getNativeSymbolsForCallNodeNonInverted(
-    callNodeIndex,
-    callNodeInfo,
-    stackTable,
-    frameTable
-  );
+  const callNodeInfoInverted = callNodeInfo.asInverted();
+  return callNodeInfoInverted !== null
+    ? getNativeSymbolsForCallNodeInverted(
+        callNodeIndex,
+        callNodeInfoInverted,
+        stackTable,
+        frameTable
+      )
+    : getNativeSymbolsForCallNodeNonInverted(
+        callNodeIndex,
+        callNodeInfo,
+        stackTable,
+        frameTable
+      );
 }
 
 export function getNativeSymbolsForCallNodeNonInverted(
@@ -3540,21 +3962,24 @@ export function getNativeSymbolsForCallNodeNonInverted(
 
 export function getNativeSymbolsForCallNodeInverted(
   callNodeIndex: IndexIntoCallNodeTable,
-  callNodeInfo: CallNodeInfo,
+  callNodeInfo: CallNodeInfoInverted,
   stackTable: StackTable,
   frameTable: FrameTable
 ): IndexIntoNativeSymbolTable[] {
-  const invertedCallNodeTable = callNodeInfo.getCallNodeTable();
-  const depth = invertedCallNodeTable.depth[callNodeIndex];
-  const endIndex = invertedCallNodeTable.subtreeRangeEnd[callNodeIndex];
+  const depth = callNodeInfo.depthForNode(callNodeIndex);
+  const [rangeStart, rangeEnd] =
+    callNodeInfo.getSuffixOrderIndexRangeForCallNode(callNodeIndex);
   const stackTablePrefixCol = stackTable.prefix;
-  const stackIndexToCallNodeIndex = callNodeInfo.getStackIndexToCallNodeIndex();
+  const stackIndexToCallNodeIndex =
+    callNodeInfo.getStackIndexToNonInvertedCallNodeIndex();
+  const suffixOrderIndexes = callNodeInfo.getSuffixOrderIndexes();
   const set = new Set();
   for (let stackIndex = 0; stackIndex < stackTable.length; stackIndex++) {
     const stackForNode = getMatchingAncestorStackForInvertedCallNode(
       stackIndex,
-      callNodeIndex,
-      endIndex,
+      rangeStart,
+      rangeEnd,
+      suffixOrderIndexes,
       depth,
       stackIndexToCallNodeIndex,
       stackTablePrefixCol
@@ -3578,7 +4003,7 @@ export function getNativeSymbolInfo(
   nativeSymbol: IndexIntoNativeSymbolTable,
   nativeSymbols: NativeSymbolTable,
   frameTable: FrameTable,
-  stringTable: UniqueStringArray
+  stringTable: StringTable
 ): NativeSymbolInfo {
   const functionSizeOrNull = nativeSymbols.functionSize[nativeSymbol];
   const functionSize =
@@ -3619,8 +4044,7 @@ export function getBottomBoxInfoForCallNode(
     nativeSymbols,
   } = thread;
 
-  const callNodeTable = callNodeInfo.getCallNodeTable();
-  const funcIndex = callNodeTable.func[callNodeIndex];
+  const funcIndex = callNodeInfo.funcForNode(callNodeIndex);
   const fileName = funcTable.fileName[funcIndex];
   const sourceFile = fileName !== null ? stringTable.getString(fileName) : null;
   const resource = funcTable.resource[funcIndex];
@@ -3678,4 +4102,126 @@ export function determineTimelineType(profile: Profile): TimelineType {
 
   // Have both category and CPU usage information. Use 'cpu-category'.
   return 'cpu-category';
+}
+
+/**
+ * Compute a map of tab to thread indexes map. This is useful for learning which
+ * threads are involved for tabs. This is mainly used for the tab selector on
+ * the top left corner.
+ */
+export function computeTabToThreadIndexesMap(
+  threads: RawThread[],
+  innerWindowIDToTabMap: Map<InnerWindowID, TabID> | null
+): Map<TabID, Set<ThreadIndex>> {
+  const tabToThreadIndexesMap = new Map();
+  if (!innerWindowIDToTabMap) {
+    // There is no pages information in the profile, return an empty map.
+    return tabToThreadIndexesMap;
+  }
+
+  // We need to iterate over all the samples and markers once to figure out
+  // which innerWindowIDs are present in each thread. This is probably not
+  // very cheap, but it'll allow us to not compute this information every
+  // time when we need it.
+  for (let threadIdx = 0; threadIdx < threads.length; threadIdx++) {
+    const thread = threads[threadIdx];
+
+    // First go over the innerWindowIDs of the samples.
+    for (let i = 0; i < thread.frameTable.length; i++) {
+      const innerWindowID = thread.frameTable.innerWindowID[i];
+      if (innerWindowID === null || innerWindowID === 0) {
+        // Zero value also means null for innerWindowID.
+        continue;
+      }
+
+      const tabID = innerWindowIDToTabMap.get(innerWindowID);
+      if (tabID === undefined) {
+        // We couldn't find the tab of this innerWindowID, this should
+        // never happen, it might indicate a bug in Firefox.
+        continue;
+      }
+
+      let threadIndexes = tabToThreadIndexesMap.get(tabID);
+      if (!threadIndexes) {
+        threadIndexes = new Set();
+        tabToThreadIndexesMap.set(tabID, threadIndexes);
+      }
+      threadIndexes.add(threadIdx);
+    }
+
+    // Then go over the markers to find their innerWindowIDs.
+    for (let i = 0; i < thread.markers.length; i++) {
+      const markerData = thread.markers.data[i];
+
+      if (!markerData) {
+        continue;
+      }
+
+      if (
+        markerData.innerWindowID !== null &&
+        markerData.innerWindowID !== undefined &&
+        // Zero value also means null for innerWindowID.
+        markerData.innerWindowID !== 0
+      ) {
+        const innerWindowID = markerData.innerWindowID;
+        const tabID = innerWindowIDToTabMap.get(innerWindowID);
+        if (tabID === undefined) {
+          // We couldn't find the tab of this innerWindowID, this should
+          // never happen, it might indicate a bug in Firefox.
+          continue;
+        }
+
+        let threadIndexes = tabToThreadIndexesMap.get(tabID);
+        if (!threadIndexes) {
+          threadIndexes = new Set();
+          tabToThreadIndexesMap.set(tabID, threadIndexes);
+        }
+        threadIndexes.add(threadIdx);
+      }
+    }
+  }
+
+  return tabToThreadIndexesMap;
+}
+
+export function computeStackTableFromRawStackTable(
+  rawStackTable: RawStackTable,
+  frameTable: FrameTable,
+  defaultCategory: IndexIntoCategoryList
+): StackTable {
+  // Compute a non-null category for every stack
+  const categoryColumn = new Array(rawStackTable.length);
+  const subcategoryColumn = new Array(rawStackTable.length);
+  for (let stackIndex = 0; stackIndex < rawStackTable.length; stackIndex++) {
+    const frameIndex = rawStackTable.frame[stackIndex];
+    const frameCategory = frameTable.category[frameIndex];
+    const frameSubcategory = frameTable.subcategory[frameIndex];
+    let stackCategory;
+    let stackSubcategory;
+    if (frameCategory !== null) {
+      stackCategory = frameCategory;
+      stackSubcategory = frameSubcategory || 0;
+    } else {
+      const prefix = rawStackTable.prefix[stackIndex];
+      if (prefix !== null) {
+        // Because of the structure of the stack table, prefix < stackIndex.
+        // So we've already computed the category for the prefix.
+        stackCategory = categoryColumn[prefix];
+        stackSubcategory = subcategoryColumn[prefix];
+      } else {
+        stackCategory = defaultCategory;
+        stackSubcategory = 0;
+      }
+    }
+    categoryColumn[stackIndex] = stackCategory;
+    subcategoryColumn[stackIndex] = stackSubcategory;
+  }
+
+  return {
+    frame: rawStackTable.frame,
+    category: categoryColumn,
+    subcategory: subcategoryColumn,
+    prefix: rawStackTable.prefix,
+    length: rawStackTable.length,
+  };
 }

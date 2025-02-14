@@ -34,7 +34,6 @@ import type {
   CallNodePath,
   CallNodeAndCategoryPath,
   CallNodeTable,
-  CallNodeInfo,
   StackType,
   ImplementationFilter,
   Transform,
@@ -49,6 +48,8 @@ import type {
   CategoryList,
   Milliseconds,
 } from 'firefox-profiler/types';
+import type { CallNodeInfo } from 'firefox-profiler/profile-logic/call-node-info';
+import type { StringTable } from 'firefox-profiler/utils/string-table';
 
 /**
  * This file contains the functions and logic for working with and applying transforms
@@ -601,8 +602,6 @@ function _removeOtherCategoryFunctionsInNodePathWithFunction(
   callNodePath: CallNodePath,
   callNodeInfo: CallNodeInfo
 ): CallNodePath {
-  const callNodeTable = callNodeInfo.getCallNodeTable();
-
   const newCallNodePath = [];
 
   let prefix = -1;
@@ -617,7 +616,7 @@ function _removeOtherCategoryFunctionsInNodePathWithFunction(
       );
     }
 
-    if (callNodeTable.category[callNodeIndex] === category) {
+    if (callNodeInfo.categoryForNode(callNodeIndex) === category) {
       newCallNodePath.push(funcIndex);
     }
 
@@ -1633,6 +1632,7 @@ function _findRangesByMarkerFilter(
   getMarker: (MarkerIndex) => Marker,
   markerIndexes: MarkerIndex[],
   markerSchemaByName: MarkerSchemaByName,
+  stringTable: StringTable,
   categoryList: CategoryList,
   filter: string
 ): StartEndRange[] {
@@ -1644,6 +1644,7 @@ function _findRangesByMarkerFilter(
     markerIndexes,
     markerSchemaByName,
     searchRegExps,
+    stringTable,
     categoryList
   );
 
@@ -1682,6 +1683,7 @@ export function filterSamples(
             getMarker,
             markerIndexes,
             markerSchemaByName,
+            thread.stringTable,
             categoryList,
             filter
           );

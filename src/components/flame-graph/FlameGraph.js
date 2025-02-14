@@ -30,6 +30,8 @@ import {
   handleCallNodeTransformShortcut,
   updateBottomBoxContentsAndMaybeOpen,
 } from 'firefox-profiler/actions/profile-view';
+import { extractNonInvertedCallTreeTimings } from 'firefox-profiler/profile-logic/call-tree';
+import { ensureExists } from 'firefox-profiler/utils/flow';
 
 import type {
   Thread,
@@ -40,7 +42,6 @@ import type {
   SamplesLikeTable,
   PreviewSelection,
   CallTreeSummaryStrategy,
-  CallNodeInfo,
   IndexIntoCallNodeTable,
   ThreadsKey,
   InnerWindowID,
@@ -48,6 +49,7 @@ import type {
 } from 'firefox-profiler/types';
 
 import type { FlameGraphTiming } from 'firefox-profiler/profile-logic/flame-graph';
+import type { CallNodeInfo } from 'firefox-profiler/profile-logic/call-node-info';
 
 import type {
   CallTree,
@@ -72,7 +74,7 @@ type StateProps = {|
   +weightType: WeightType,
   +innerWindowIDToPageMap: Map<InnerWindowID, Page> | null,
   +unfilteredThread: Thread,
-  +sampleIndexOffset: number,
+  +ctssSampleIndexOffset: number,
   +maxStackDepthPlusOne: number,
   +timeRange: StartEndRange,
   +previewSelection: PreviewSelection,
@@ -87,8 +89,8 @@ type StateProps = {|
   +interval: Milliseconds,
   +isInverted: boolean,
   +callTreeSummaryStrategy: CallTreeSummaryStrategy,
-  +samples: SamplesLikeTable,
-  +unfilteredSamples: SamplesLikeTable,
+  +ctssSamples: SamplesLikeTable,
+  +unfilteredCtssSamples: SamplesLikeTable,
   +tracedTiming: CallTreeTimings | null,
   +displayImplementation: boolean,
   +displayStackType: boolean,
@@ -320,7 +322,7 @@ class FlameGraphImpl extends React.PureComponent<Props> {
     const {
       thread,
       unfilteredThread,
-      sampleIndexOffset,
+      ctssSampleIndexOffset,
       threadsKey,
       maxStackDepthPlusOne,
       flameGraphTiming,
@@ -337,12 +339,25 @@ class FlameGraphImpl extends React.PureComponent<Props> {
       isInverted,
       innerWindowIDToPageMap,
       weightType,
-      samples,
-      unfilteredSamples,
+      ctssSamples,
+      unfilteredCtssSamples,
       tracedTiming,
       displayImplementation,
       displayStackType,
     } = this.props;
+
+    // Get the CallTreeTimingsNonInverted out of tracedTiming. We pass this
+    // along rather than the more generic CallTreeTimings type so that the
+    // FlameGraphCanvas component can operate on the more specialized type.
+    // (CallTreeTimingsNonInverted and CallTreeTimingsInverted are very
+    // different, and the flame graph is only used with non-inverted timings.)
+    const tracedTimingNonInverted =
+      tracedTiming !== null
+        ? ensureExists(
+            extractNonInvertedCallTreeTimings(tracedTiming),
+            'The flame graph should only ever see non-inverted timings, see UrlState.getInvertCallstack'
+          )
+        : null;
 
     const maxViewportHeight = maxStackDepthPlusOne * STACK_FRAME_HEIGHT;
 
@@ -375,7 +390,7 @@ class FlameGraphImpl extends React.PureComponent<Props> {
               innerWindowIDToPageMap,
               weightType,
               unfilteredThread,
-              sampleIndexOffset,
+              ctssSampleIndexOffset,
               maxStackDepthPlusOne,
               flameGraphTiming,
               callTree,
@@ -392,9 +407,9 @@ class FlameGraphImpl extends React.PureComponent<Props> {
               shouldDisplayTooltips: this._shouldDisplayTooltips,
               interval,
               isInverted,
-              samples,
-              unfilteredSamples,
-              tracedTiming,
+              ctssSamples,
+              unfilteredCtssSamples,
+              tracedTiming: tracedTimingNonInverted,
               displayImplementation,
               displayStackType,
             }}
@@ -418,8 +433,6 @@ export const FlameGraph = explicitConnect<{||}, StateProps, DispatchProps>({
     thread: selectedThreadSelectors.getFilteredThread(state),
     unfilteredThread: selectedThreadSelectors.getThread(state),
     weightType: selectedThreadSelectors.getWeightTypeForCallTree(state),
-    sampleIndexOffset:
-      selectedThreadSelectors.getSampleIndexOffsetFromCommittedRange(state),
     // Use the filtered call node max depth, rather than the preview filtered one, so
     // that the viewport height is stable across preview selections.
     maxStackDepthPlusOne:
@@ -441,10 +454,11 @@ export const FlameGraph = explicitConnect<{||}, StateProps, DispatchProps>({
     callTreeSummaryStrategy:
       selectedThreadSelectors.getCallTreeSummaryStrategy(state),
     innerWindowIDToPageMap: getInnerWindowIDToPageMap(state),
-    samples:
-      selectedThreadSelectors.getPreviewFilteredSamplesForCallTree(state),
-    unfilteredSamples:
-      selectedThreadSelectors.getUnfilteredSamplesForCallTree(state),
+    ctssSamples: selectedThreadSelectors.getPreviewFilteredCtssSamples(state),
+    ctssSampleIndexOffset:
+      selectedThreadSelectors.getPreviewFilteredCtssSampleIndexOffset(state),
+    unfilteredCtssSamples:
+      selectedThreadSelectors.getUnfilteredCtssSamples(state),
     tracedTiming: selectedThreadSelectors.getTracedTiming(state),
     displayImplementation: getProfileUsesFrameImplementation(state),
     displayStackType: getProfileUsesMultipleStackTypes(state),

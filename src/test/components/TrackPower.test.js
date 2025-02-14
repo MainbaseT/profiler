@@ -58,19 +58,20 @@ describe('TrackPower', function () {
     );
     const threadIndex = 0;
     const thread = profile.threads[threadIndex];
+    const sampleTimes = ensureExists(thread.samples.time);
     // Changing one of the sample times, so we can test different intervals.
-    thread.samples.time[1] = 1.5; // It was 1 before.
+    sampleTimes[1] = 1.5; // It was 1 before.
     // Ensure some samples are very close to each other, to exercise
     // the max min decimation algorithm.
-    for (let i = 7; i < thread.samples.time.length - 1; ++i) {
-      thread.samples.time[i] = 7 + i / 100;
+    for (let i = 7; i < sampleTimes.length - 1; ++i) {
+      sampleTimes[i] = 7 + i / 100;
     }
     profile.counters = [
       getCounterForThreadWithSamples(
         thread,
         threadIndex,
         {
-          time: thread.samples.time.slice(),
+          time: sampleTimes.slice(),
           // Power usage numbers. They are pWh so they are pretty big.
           count: [
             10000, 40000, 50000, 100000, 2000000, 5000000, 30000, 1000000,
@@ -214,5 +215,40 @@ describe('TrackPower', function () {
     expect(
       screen.getByText(/Energy used in the current selection:/).nextSibling
     ).toHaveTextContent('5.0\u2069 µWh');
+    expect(
+      screen.getByText(/Average power in the current selection/).nextSibling
+    ).toHaveTextContent('18.0\u2069 W');
+  });
+
+  it('does not break when the selection is empty', function () {
+    const { dispatch, moveMouseAtCounter } = setup();
+    dispatch(
+      updatePreviewSelection({
+        hasSelection: true,
+        isModifying: false,
+        selectionStart: 6,
+        selectionEnd: 6,
+      })
+    );
+    moveMouseAtCounter(3, 0);
+    // 100000pWh spent over 1ms is 360mW
+    // Note: Fluent adds isolation characters \u2068 and \u2069 around variables.
+    expect(screen.getByText(/Power:/).nextSibling).toHaveTextContent(
+      '360\u2069 mW'
+    );
+    // Over the full range, we get 8.352 µWh, therefore we'll see in the tooltip
+    // 8.4 µWh.
+    expect(screen.getByText(/visible range:/).nextSibling).toHaveTextContent(
+      '8.4\u2069 µWh'
+    );
+
+    // The preview selection being empty, these 2 lines are not useful and
+    // therefore not rendered.
+    expect(
+      screen.queryByText(/Energy used in the current selection:/)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Average power in the current selection/)
+    ).not.toBeInTheDocument();
   });
 });
