@@ -12,6 +12,7 @@ import {
   getCommittedRange,
   getZeroAt,
   getMouseTimePosition,
+  getProfileTimelineUnit,
 } from 'firefox-profiler/selectors/profile';
 import {
   updatePreviewSelection,
@@ -21,7 +22,7 @@ import {
 import explicitConnect from 'firefox-profiler/utils/connect';
 import classNames from 'classnames';
 import { Draggable } from 'firefox-profiler/components/shared/Draggable';
-import { getFormattedTimeLength } from 'firefox-profiler/profile-logic/committed-ranges';
+import { getFormattedTimelineValue } from 'firefox-profiler/profile-logic/committed-ranges';
 import './Selection.css';
 
 import type {
@@ -45,6 +46,7 @@ type StateProps = {|
   +previewSelection: PreviewSelection,
   +committedRange: StartEndRange,
   +zeroAt: Milliseconds,
+  +profileTimelineUnit: string,
   +mouseTimePosition: Milliseconds | null,
 |};
 
@@ -281,20 +283,29 @@ class TimelineRulerAndSelection extends React.PureComponent<Props> {
       const { committedRange, width, updatePreviewSelection } = this.props;
       const delta = (dx / width) * (committedRange.end - committedRange.start);
       const selectionDeltas = fun(delta);
-      const selectionStart = Math.max(
+      let selectionStart = clamp(
+        originalSelection.selectionStart + selectionDeltas.startDelta,
         committedRange.start,
-        originalSelection.selectionStart + selectionDeltas.startDelta
-      );
-      const selectionEnd = clamp(
-        originalSelection.selectionEnd + selectionDeltas.endDelta,
-        selectionStart,
         committedRange.end
       );
+      let selectionEnd = clamp(
+        originalSelection.selectionEnd + selectionDeltas.endDelta,
+        committedRange.start,
+        committedRange.end
+      );
+      let draggingStart = isModifying && !!selectionDeltas.startDelta;
+      let draggingEnd = isModifying && !!selectionDeltas.endDelta;
+      if (selectionStart > selectionEnd) {
+        [selectionStart, selectionEnd] = [selectionEnd, selectionStart];
+        [draggingStart, draggingEnd] = [draggingEnd, draggingStart];
+      }
       updatePreviewSelection({
         hasSelection: true,
         isModifying,
         selectionStart,
         selectionEnd,
+        draggingStart,
+        draggingEnd,
       });
     };
 
@@ -332,9 +343,18 @@ class TimelineRulerAndSelection extends React.PureComponent<Props> {
     +selectionStart: number,
     +selectionEnd: number,
     +isModifying: boolean,
+    +draggingStart?: boolean,
+    +draggingEnd?: boolean,
   }) {
-    const { committedRange, width } = this.props;
+    const { committedRange, width, profileTimelineUnit } = this.props;
     const { selectionStart, selectionEnd } = previewSelection;
+
+    if (!Number.isFinite(selectionStart) || !Number.isFinite(selectionEnd)) {
+      // Do not render the selection overlay if there is no data to display in
+      // the timeline. This prevents a crash on range selection if the profile
+      // is completely empty.
+      return null;
+    }
 
     const beforeWidth =
       ((selectionStart - committedRange.start) /
@@ -353,7 +373,10 @@ class TimelineRulerAndSelection extends React.PureComponent<Props> {
         />
         <div className="timelineSelectionOverlayWrapper">
           <div
-            className="timelineSelectionGrippy"
+            className={classNames('timelineSelectionGrippy', {
+              draggingStart: previewSelection.draggingStart,
+              draggingEnd: previewSelection.draggingEnd,
+            })}
             style={{ width: `${selectionWidth}px` }}
           >
             <Draggable
@@ -378,7 +401,10 @@ class TimelineRulerAndSelection extends React.PureComponent<Props> {
                 hidden: !previewSelection.isModifying,
               })}
             >
-              {getFormattedTimeLength(selectionEnd - selectionStart)}
+              {getFormattedTimelineValue(
+                selectionEnd - selectionStart,
+                profileTimelineUnit
+              )}
             </span>
             <button
               className={classNames('timelineSelectionOverlayZoomButton', {
@@ -404,6 +430,7 @@ class TimelineRulerAndSelection extends React.PureComponent<Props> {
       width,
       committedRange,
       zeroAt,
+      profileTimelineUnit,
     } = this.props;
 
     let hoverLocation = null;
@@ -413,6 +440,18 @@ class TimelineRulerAndSelection extends React.PureComponent<Props> {
       hoverLocation =
         (width * (mouseTimePosition - committedRange.start)) /
         (committedRange.end - committedRange.start);
+    }
+
+    let mousePosTimestamp = null;
+    if (mouseTimePosition !== null && Number.isFinite(mouseTimePosition)) {
+      // Only compute and display the timestamp when there is a mouse position
+      // and the position is not NaN or Infinity which is the case when there
+      // is no data in the timeline.
+      mousePosTimestamp = getFormattedTimelineValue(
+        mouseTimePosition - zeroAt,
+        profileTimelineUnit,
+        (committedRange.end - committedRange.start) / width
+      );
     }
 
     return (
@@ -431,19 +470,16 @@ class TimelineRulerAndSelection extends React.PureComponent<Props> {
           className="timelineSelectionHoverLine"
           style={{
             visibility:
-              previewSelection.isModifying || hoverLocation === null
+              previewSelection.isModifying ||
+              hoverLocation === null ||
+              isNaN(hoverLocation)
                 ? 'hidden'
                 : undefined,
             left: hoverLocation === null ? '0' : `${hoverLocation}px`,
           }}
         >
           <span className="timelineSelectionOverlayTime">
-            {mouseTimePosition !== null
-              ? getFormattedTimeLength(
-                  mouseTimePosition - zeroAt,
-                  (committedRange.end - committedRange.start) / width
-                )
-              : null}
+            {mousePosTimestamp}
           </span>
         </div>
       </div>
@@ -460,6 +496,7 @@ export const TimelineSelection = explicitConnect<
     previewSelection: getPreviewSelection(state),
     committedRange: getCommittedRange(state),
     zeroAt: getZeroAt(state),
+    profileTimelineUnit: getProfileTimelineUnit(state),
     mouseTimePosition: getMouseTimePosition(state),
   }),
   mapDispatchToProps: {

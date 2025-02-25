@@ -239,13 +239,14 @@ class MarkerTooltipContents extends React.PureComponent<Props> {
 
     if (data) {
       // Add the details for the markers based on their Marker schema.
-      const schema = getSchemaFromMarker(
-        markerSchemaByName,
-        marker.name,
-        marker.data
-      );
+      const schema = getSchemaFromMarker(markerSchemaByName, marker.data);
       if (schema) {
         for (const schemaData of schema.data) {
+          if (schemaData.hidden) {
+            // Do not include the data field if it's marked as hidden.
+            continue;
+          }
+
           // Check for a schema that is looking up and formatting a value from
           // the payload.
           if (schemaData.value === undefined) {

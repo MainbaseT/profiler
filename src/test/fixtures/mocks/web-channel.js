@@ -8,6 +8,7 @@ import type {
   MessageFromBrowser,
   MessageToBrowser,
 } from '../../../app-logic/web-channel';
+import type { FaviconData } from 'firefox-profiler/types';
 
 /**
  * Mock out the WebChannel, a Firefox internal mechanism that allows us to
@@ -132,7 +133,10 @@ export function simulateOldWebChannelAndFrameScript(
   return webChannel;
 }
 
-export function simulateWebChannel(profileGetter: () => mixed) {
+export function simulateWebChannel(
+  profileGetter: () => mixed,
+  faviconsGetter?: () => Promise<Array<FaviconData | null>>
+) {
   const webChannel = mockWebChannel();
 
   const { registerMessageToChromeListener, triggerResponse } = webChannel;
@@ -144,7 +148,7 @@ export function simulateWebChannel(profileGetter: () => mixed) {
           requestId: message.requestId,
           response: {
             menuButtonIsEnabled: true,
-            version: 1,
+            version: 5,
           },
         });
         break;
@@ -176,6 +180,42 @@ export function simulateWebChannel(profileGetter: () => mixed) {
         });
         break;
       }
+      case 'GET_EXTERNAL_MARKERS': {
+        triggerResponse({
+          type: 'SUCCESS_RESPONSE',
+          requestId: message.requestId,
+          response: {},
+        });
+        break;
+      }
+      case 'GET_EXTERNAL_POWER_TRACKS': {
+        triggerResponse({
+          type: 'SUCCESS_RESPONSE',
+          requestId: message.requestId,
+          response: ([]: MixedObject[]),
+        });
+        break;
+      }
+      case 'GET_PAGE_FAVICONS': {
+        const favicons: Array<FaviconData | null> = faviconsGetter
+          ? await faviconsGetter()
+          : [];
+        triggerResponse({
+          type: 'SUCCESS_RESPONSE',
+          requestId: message.requestId,
+          response: favicons,
+        });
+        break;
+      }
+      case 'OPEN_SCRIPT_IN_DEBUGGER': {
+        triggerResponse({
+          type: 'SUCCESS_RESPONSE',
+          requestId: message.requestId,
+          response: undefined,
+        });
+        break;
+      }
+
       default: {
         triggerResponse({
           type: 'ERROR_RESPONSE',

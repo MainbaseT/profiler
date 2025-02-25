@@ -30,6 +30,7 @@ AppHeader--github-icon =
 ## AppViewRouter
 ## This is used for displaying errors when loading the application.
 
+AppViewRouter--error-from-post-message = Das Profil konnte nicht importiert werden.
 AppViewRouter--error-unpublished = Das Profil von { -firefox-brand-name } konnte nicht abgerufen werden.
 AppViewRouter--error-from-file = Die Datei konnte nicht gelesen oder das darin enthaltene Profil nicht verarbeitet werden.
 AppViewRouter--error-local = Noch nicht implementiert.
@@ -112,6 +113,7 @@ CallNodeContextMenu--searchfox = Name der Funktion auf Searchfox nachschlagen
 CallNodeContextMenu--copy-function-name = Funktionsname kopieren
 CallNodeContextMenu--copy-script-url = Skript-URL kopieren
 CallNodeContextMenu--copy-stack = Stapel kopieren
+CallNodeContextMenu--show-the-function-in-devtools = Funktion in den Entwicklerwerkzeugen anzeigen
 
 ## CallTree
 ## This is the component for Call Tree panel.
@@ -318,6 +320,15 @@ Home--load-files-from-other-tools2 =
     <perf>Linux perf</perf>, <simpleperf>Android SimplePerf</simpleperf>, die
     Chrome Performance Panel, <androidstudio>Android Studio</androidstudio> oder
     eine Datei im <dhat>dhat-Format</dhat> oder <traceevent>Googles Trace-Event-Format</traceevent>. <write>Erfahren Sie, wie Sie Ihren eigenen Importeur schreiben</write>.
+Home--install-chrome-extension = Installieren Sie die Chrome-Erweiterung
+Home--chrome-extension-instructions =
+    Verwenden Sie die <a>{ -profiler-brand-name }-Erweiterung für Chrome</a>,
+    um Leistungsprofile in Chrome zu erfassen und im { -profiler-brand-name }
+    zu analysieren. Installieren Sie die Erweiterung aus dem Chrome Web Store.
+Home--chrome-extension-recording-instructions =
+    Verwenden Sie nach der Installation das Symbolleisten-Symbol der Erweiterung
+    oder die Tastenkombinationen zum Starten und Stoppen der Profilerstellung. Sie können auch
+    Profile exportieren und hier zur detaillierten Analyse laden.
 
 ## IdleSearchField
 ## The component that is used for all the search inputs in the application.
@@ -604,6 +615,14 @@ NumberFormat--short-date = { SHORTDATE($date) }
 
 PanelSearch--search-field-hint = Wussten Sie, dass Sie das Komma (,) verwenden können, um mit mehreren Begriffen zu suchen?
 
+## Profile Name Button
+
+ProfileName--edit-profile-name-button =
+    .title = Profilnamen bearbeiten
+ProfileName--edit-profile-name-input =
+    .title = Profilnamen bearbeiten
+    .aria-label = Profilname
+
 ## Profile Delete Button
 
 # This string is used on the tooltip of the published profile links delete button in uploaded recordings page.
@@ -651,6 +670,7 @@ ProfileFilterNavigator--full-range-with-duration = Vollständiger Zeitraum ({ $f
 
 ## Profile Loader Animation
 
+ProfileLoaderAnimation--loading-from-post-message = Das Profil wird importiert und verarbeitet…
 ProfileLoaderAnimation--loading-unpublished = Das Profil wird direkt von { -firefox-brand-name } importiert…
 ProfileLoaderAnimation--loading-from-file = Datei lesen und Profil verarbeiten…
 ProfileLoaderAnimation--loading-local = Noch nicht implementiert.
@@ -726,6 +746,13 @@ TabBar--marker-table-tab = Markierungstabelle
 TabBar--network-tab = Netzwerk
 TabBar--js-tracer-tab = JS-Aufzeichnung
 
+## TabSelectorMenu
+## This component is a context menu that's opened when you click on the root
+## range at the top left corner for profiler analysis view. It's used to switch
+## between tabs that were captured in the profile.
+
+TabSelectorMenu--all-tabs-and-windows = Alle Tabs und Fenster
+
 ## TrackContextMenu
 ## This is used as a context menu for timeline to organize the tracks in the
 ## analysis UI.
@@ -742,6 +769,10 @@ TrackContextMenu--hide-other-screenshots-tracks = Andere Screenshots-Tracks ausb
 TrackContextMenu--hide-track = „{ $trackName }“ verbergen
 TrackContextMenu--show-all-tracks = Alle Tracks anzeigen
 TrackContextMenu--show-local-tracks-in-process = Alle Tracks in diesem Prozess anzeigen
+# This is used as the context menu item to hide all tracks of the selected track's type.
+# Variables:
+#   $type (String) - Name of the type of selected track to hide.
+TrackContextMenu--hide-all-tracks-by-selected-track-type = Alle Spuren vom Typ „{ $type }“ ausblenden
 # This is used in the tracks context menu as a button to show all the tracks
 # that match the search filter.
 TrackContextMenu--show-all-matching-tracks = Alle passenden Tracks anzeigen

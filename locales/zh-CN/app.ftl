@@ -30,6 +30,7 @@ AppHeader--github-icon =
 ## AppViewRouter
 ## This is used for displaying errors when loading the application.
 
+AppViewRouter--error-from-post-message = 无法导入分析记录。
 AppViewRouter--error-unpublished = 无法从 { -firefox-brand-name } 检索到分析记录。
 AppViewRouter--error-from-file = 无法读取或解析其中的分析记录。
 AppViewRouter--error-local = 尚未实现。
@@ -89,6 +90,7 @@ CallNodeContextMenu--searchfox = 用 Searchfox 搜索函数名称
 CallNodeContextMenu--copy-function-name = 复制函数名称
 CallNodeContextMenu--copy-script-url = 复制脚本 URL
 CallNodeContextMenu--copy-stack = 复制栈
+CallNodeContextMenu--show-the-function-in-devtools = 在开发者工具中显示函数
 
 ## CallTree
 ## This is the component for Call Tree panel.
@@ -261,6 +263,9 @@ Home--your-recent-uploaded-recordings-title = 您最近上传的记录
 # We replace the elements such as <perf> and <simpleperf> with links to the
 # documentation to use these tools.
 Home--load-files-from-other-tools2 = { -profiler-brand-name } 也可以从其他分析器导入记录，例如 <perf>Linux perf</perf>、<simpleperf>Android SimplePerf</simpleperf>、Chrome 性能面板、<androidstudio>Android Studio</androidstudio>，支持直接导入 <dhat>dhat</dhat>、<traceevent>Google 的 Trace Event</traceevent> 格式保存的分析记录。<write>点此了解如何编写您自己的导入程序</write>。
+Home--install-chrome-extension = 安装 Chrome 扩展
+Home--chrome-extension-instructions = 使用 <a>Chrome 版 { -profiler-brand-name } 扩展</a>，在 Chrome 中捕获性能分析记录，并通过 { -profiler-brand-name } 分析。可到 Chrome 应用商店安装扩展。
+Home--chrome-extension-recording-instructions = 安装后，即可使用扩展的工具栏图标和快捷键来开始或停止分析，也可以导出分析记录并在此处加载以进行详细分析。
 
 ## IdleSearchField
 ## The component that is used for all the search inputs in the application.
@@ -542,6 +547,14 @@ NumberFormat--short-date = { SHORTDATE($date) }
 
 PanelSearch--search-field-hint = 您知道可以使用半角逗号（,）搜索多个词条吗？
 
+## Profile Name Button
+
+ProfileName--edit-profile-name-button =
+    .title = 编辑分析记录名
+ProfileName--edit-profile-name-input =
+    .title = 编辑分析记录名
+    .aria-label = 分析记录名
+
 ## Profile Delete Button
 
 # This string is used on the tooltip of the published profile links delete button in uploaded recordings page.
@@ -587,6 +600,7 @@ ProfileFilterNavigator--full-range-with-duration = 完整范围（{ $fullRangeDu
 
 ## Profile Loader Animation
 
+ProfileLoaderAnimation--loading-from-post-message = 正在导入并处理分析记录…
 ProfileLoaderAnimation--loading-unpublished = 正在直接从 { -firefox-brand-name } 导入分析记录…
 ProfileLoaderAnimation--loading-from-file = 正在读取文件并处理分析记录…
 ProfileLoaderAnimation--loading-local = 尚未实现。
@@ -663,6 +677,13 @@ TabBar--marker-table-tab = 标记表
 TabBar--network-tab = 网络
 TabBar--js-tracer-tab = JS 追踪器
 
+## TabSelectorMenu
+## This component is a context menu that's opened when you click on the root
+## range at the top left corner for profiler analysis view. It's used to switch
+## between tabs that were captured in the profile.
+
+TabSelectorMenu--all-tabs-and-windows = 所有标签页和窗口
+
 ## TrackContextMenu
 ## This is used as a context menu for timeline to organize the tracks in the
 ## analysis UI.
@@ -679,6 +700,10 @@ TrackContextMenu--hide-other-screenshots-tracks = 隐藏其他快照轨
 TrackContextMenu--hide-track = 隐藏“{ $trackName }”
 TrackContextMenu--show-all-tracks = 显示所有轨道
 TrackContextMenu--show-local-tracks-in-process = 显示此进程中的所有轨道
+# This is used as the context menu item to hide all tracks of the selected track's type.
+# Variables:
+#   $type (String) - Name of the type of selected track to hide.
+TrackContextMenu--hide-all-tracks-by-selected-track-type = 隐藏所有“{ $type }”类型的轨道
 # This is used in the tracks context menu as a button to show all the tracks
 # that match the search filter.
 TrackContextMenu--show-all-matching-tracks = 显示所有匹配的轨道
@@ -731,6 +756,21 @@ TrackPower--tooltip-power-watt = { $value } W
 #   $value (String) - the power value at this location
 TrackPower--tooltip-power-milliwatt = { $value } mW
     .label = 功率
+# This is used in the tooltip when the power value uses the kilowatt unit.
+# Variables:
+#   $value (String) - the power value at this location
+TrackPower--tooltip-average-power-kilowatt = { $value } kW
+    .label = 当前选择范围内的平均功耗
+# This is used in the tooltip when the power value uses the watt unit.
+# Variables:
+#   $value (String) - the power value at this location
+TrackPower--tooltip-average-power-watt = { $value } W
+    .label = 当前选择范围内的平均功耗
+# This is used in the tooltip when the instant power value uses the milliwatt unit.
+# Variables:
+#   $value (String) - the power value at this location
+TrackPower--tooltip-average-power-milliwatt = { $value } mW
+    .label = 当前选择范围内的平均功耗
 # This is used in the tooltip when the energy used in the current range uses the
 # kilowatt-hour unit.
 # Variables:

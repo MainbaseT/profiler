@@ -6,24 +6,27 @@
 import type {
   ScreenshotPayload,
   Profile,
-  Thread,
+  RawThread,
   ThreadIndex,
   Pid,
   GlobalTrack,
   LocalTrack,
   TrackIndex,
-  Counter,
+  RawCounter,
   Tid,
   TrackReference,
-  MarkerSchemaByName,
+  TabID,
 } from 'firefox-profiler/types';
 
-import { defaultThreadOrder, getFriendlyThreadName } from './profile-data';
-import { computeMaxCPUDeltaPerInterval } from './cpu';
+import {
+  defaultThreadOrder,
+  getFriendlyThreadName,
+  computeStackTableFromRawStackTable,
+} from './profile-data';
 import { intersectSets, subtractSets } from '../utils/set';
+import { StringTable } from '../utils/string-table';
 import { splitSearchString, stringsToRegExp } from '../utils/string';
 import { ensureExists, assertExhaustiveCheck } from '../utils/flow';
-import { getMarkerSchemaName } from './marker-schema';
 
 export type TracksWithOrder = {|
   +globalTracks: GlobalTrack[],
@@ -252,16 +255,28 @@ export function initializeLocalTrackOrderByPid(
 
 /**
  * Take a profile and figure out all of the local tracks, and organize them by PID.
+ * availableGlobalTracks is being sent by the caller to see which globalTracks
+ * are present. The ones that have been filtered out by the tab selector
+ * should be ignored.
  */
 export function computeLocalTracksByPid(
   profile: Profile,
-  markerSchemaByName: MarkerSchemaByName
+  availableGlobalTracks: GlobalTrack[]
 ): Map<Pid, LocalTrack[]> {
   const localTracksByPid = new Map();
 
+  // Create a new set of available pids, so we can filter out the local tracks
+  // if their globalTracks are also filtered out by the tab selector.
+  const availablePids = new Set();
+  for (const globalTrack of availableGlobalTracks) {
+    if (globalTrack.type === 'process') {
+      availablePids.add(globalTrack.pid);
+    }
+  }
+
   // find markers that might have their own track.
   const markerSchemasWithGraphs = (profile.meta.markerSchema || []).filter(
-    (schema) => schema.graphs !== undefined
+    (schema) => Array.isArray(schema.graphs) && schema.graphs.length > 0
   );
 
   for (
@@ -271,6 +286,10 @@ export function computeLocalTracksByPid(
   ) {
     const thread = profile.threads[threadIndex];
     const { pid, markers } = thread;
+    if (!availablePids.has(pid)) {
+      // If the global track is filtered out ignore it here too.
+      continue;
+    }
     // Get or create the tracks and trackOrder.
     let tracks = localTracksByPid.get(pid);
     if (tracks === undefined) {
@@ -306,12 +325,8 @@ export function computeLocalTracksByPid(
       for (let i = 0; i < markers.length; ++i) {
         const markerNameIndex = markers.name[i];
         const markerData = markers.data[i];
-        const markerSchemaName = getMarkerSchemaName(
-          markerSchemaByName,
-          thread.stringTable.getString(markerNameIndex),
-          markerData
-        );
-        if (markerData && markerSchemaByName) {
+        const markerSchemaName = markerData ? markerData.type : null;
+        if (markerData && markerSchemaName) {
           const mapEntry = markerTracksBySchemaName.get(markerSchemaName);
           if (mapEntry && mapEntry.keys.every((k) => k in markerData)) {
             mapEntry.markerNames.add(markerNameIndex);
@@ -339,6 +354,11 @@ export function computeLocalTracksByPid(
   if (counters) {
     for (let counterIndex = 0; counterIndex < counters.length; counterIndex++) {
       const { pid, category, samples } = counters[counterIndex];
+      if (!availablePids.has(pid)) {
+        // If the global track is filtered out ignore it here too.
+        continue;
+      }
+
       if (['Memory', 'power', 'Bandwidth'].includes(category)) {
         if (category === 'power' && samples.length <= 2) {
           // If we have only 2 samples, they are likely both 0 and we don't have a real counter.
@@ -378,7 +398,7 @@ export function computeLocalTracksByPid(
  * localTracksByPid map.
  */
 export function addEventDelayTracksForThreads(
-  threads: Thread[],
+  threads: RawThread[],
   localTracksByPid: Map<Pid, LocalTrack[]>
 ): Map<Pid, LocalTrack[]> {
   const newLocalTracksByPid = new Map();
@@ -409,7 +429,7 @@ export function addEventDelayTracksForThreads(
  * localTracksByPid map.
  */
 export function addProcessCPUTracksForProcess(
-  counters: Counter[] | null,
+  counters: RawCounter[] | null,
   localTracksByPid: Map<Pid, LocalTrack[]>
 ): Map<Pid, LocalTrack[]> {
   if (counters === null) {
@@ -439,7 +459,11 @@ export function addProcessCPUTracksForProcess(
 /**
  * Take a profile and figure out what GlobalTracks it contains.
  */
-export function computeGlobalTracks(profile: Profile): GlobalTrack[] {
+export function computeGlobalTracks(
+  profile: Profile,
+  tabID: TabID | null = null,
+  tabToThreadIndexesMap: Map<ThreadIndex, Set<TabID>>
+): GlobalTrack[] {
   // Defining this ProcessTrack type here helps flow understand the intent of
   // the internals of this function, otherwise each GlobalTrack usage would need
   // to check that it's a process type.
@@ -449,7 +473,7 @@ export function computeGlobalTracks(profile: Profile): GlobalTrack[] {
     mainThreadIndex: number | null,
   };
   const globalTracksByPid: Map<Pid, ProcessTrack> = new Map();
-  const globalTracks: GlobalTrack[] = [];
+  let globalTracks: GlobalTrack[] = [];
 
   // Create the global tracks.
   for (
@@ -458,7 +482,7 @@ export function computeGlobalTracks(profile: Profile): GlobalTrack[] {
     threadIndex++
   ) {
     const thread = profile.threads[threadIndex];
-    const { pid, markers, stringTable } = thread;
+    const { pid, markers, stringArray } = thread;
     if (thread.isMainThread) {
       // This is a main thread, a global track needs to be created or updated with
       // the main thread info.
@@ -493,6 +517,7 @@ export function computeGlobalTracks(profile: Profile): GlobalTrack[] {
 
     // Check for screenshots.
     const ids: Set<string> = new Set();
+    const stringTable = StringTable.withBackingArray(stringArray);
     if (stringTable.hasString('CompositorScreenshot')) {
       const screenshotNameIndex = stringTable.indexForString(
         'CompositorScreenshot'
@@ -526,6 +551,14 @@ export function computeGlobalTracks(profile: Profile): GlobalTrack[] {
     }
   }
 
+  // Filter the global tracks by current tab.
+  globalTracks = filterGlobalTracksByTab(
+    globalTracks,
+    profile,
+    tabID,
+    tabToThreadIndexesMap
+  );
+
   // When adding a new track type, this sort ensures that the newer tracks are added
   // at the end so that the global track indexes are stable and backwards compatible.
   globalTracks.sort(
@@ -535,6 +568,67 @@ export function computeGlobalTracks(profile: Profile): GlobalTrack[] {
   );
 
   return globalTracks;
+}
+
+/**
+ * Filter the global tracks by the current selected tab if it's specified.
+ */
+function filterGlobalTracksByTab(
+  globalTracks: GlobalTrack[],
+  profile: Profile,
+  tabID: TabID | null,
+  tabToThreadIndexesMap: Map<ThreadIndex, Set<TabID>>
+): GlobalTrack[] {
+  if (tabID === null) {
+    // Return the global tracks if there is no tab filter.
+    return globalTracks;
+  }
+
+  const threadIndexes = tabToThreadIndexesMap.get(tabID);
+  if (!threadIndexes) {
+    // This is not really a possible path. It might indicate a bug on the frontend
+    // or backend.
+    console.warn(`Failed to find the thread indexes for given tab ${tabID}`);
+    return globalTracks;
+  }
+
+  // Filter the tracks by the tab filter.
+  const newGlobalTracks = [];
+  for (const globalTrack of globalTracks) {
+    switch (globalTrack.type) {
+      case 'process': {
+        const { mainThreadIndex } = globalTrack;
+        if (mainThreadIndex === null) {
+          // Do not include the global track if it doesn't have any main thread
+          // index.
+          continue;
+        }
+
+        const thread = profile.threads[mainThreadIndex];
+        if (
+          // Always add the parent process main thread.
+          (thread.isMainThread && thread.processType === 'default') ||
+          threadIndexes.has(mainThreadIndex)
+        ) {
+          newGlobalTracks.push(globalTrack);
+        }
+        break;
+      }
+      // Always include the screenshots.
+      case 'screenshots':
+      // Also always add the visual progress tracks without looking at the tab
+      // filter. (fallthrough)
+      case 'visual-progress':
+      case 'perceptual-visual-progress':
+      case 'contentful-visual-progress':
+        newGlobalTracks.push(globalTrack);
+        break;
+      default:
+        throw new Error('Unhandled globalTack type.');
+    }
+  }
+
+  return newGlobalTracks;
 }
 
 /**
@@ -722,11 +816,18 @@ export function tryInitializeHiddenTracksFromUrl(
 // The result is guaranteed to have a non-empty number of visible threads.
 export function computeDefaultHiddenTracks(
   tracksWithOrder: TracksWithOrder,
-  profile: Profile
+  profile: Profile,
+  threadActivityScores: Array<ThreadActivityScore>,
+  includeParentProcessThreads: boolean
 ): HiddenTracks {
   return _computeHiddenTracksForVisibleThreads(
     profile,
-    computeDefaultVisibleThreads(profile),
+    computeDefaultVisibleThreads(
+      profile,
+      tracksWithOrder,
+      threadActivityScores,
+      includeParentProcessThreads
+    ),
     tracksWithOrder
   );
 }
@@ -827,7 +928,7 @@ export function getVisibleThreads(
 
 export function getGlobalTrackName(
   globalTrack: GlobalTrack,
-  threads: Thread[]
+  threads: RawThread[]
 ): string {
   switch (globalTrack.type) {
     case 'process': {
@@ -877,8 +978,8 @@ export function getGlobalTrackName(
 
 export function getLocalTrackName(
   localTrack: LocalTrack,
-  threads: Thread[],
-  counters: Counter[]
+  threads: RawThread[],
+  counters: RawCounter[]
 ): string {
   switch (localTrack.type) {
     case 'thread':
@@ -904,12 +1005,45 @@ export function getLocalTrackName(
     case 'power':
       return counters[localTrack.counterIndex].name;
     case 'marker':
-      return threads[localTrack.threadIndex].stringTable.getString(
-        localTrack.markerName
-      );
+      return threads[localTrack.threadIndex].stringArray[localTrack.markerName];
     default:
       throw assertExhaustiveCheck(localTrack, 'Unhandled LocalTrack type.');
   }
+}
+
+// Return a Set of all possible track threads. We can't just rely on the
+// profile.threads, because some of them could be already filtered out by the
+// tab selector.
+function computeAllTrackThreads(
+  tracksWithOrder: TracksWithOrder
+): Set<ThreadIndex> {
+  const allTrackThreads = new Set();
+
+  for (const globalTrack of tracksWithOrder.globalTracks) {
+    switch (globalTrack.type) {
+      case 'process':
+        if (globalTrack.mainThreadIndex !== null) {
+          allTrackThreads.add(globalTrack.mainThreadIndex);
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  for (const [, localTracks] of tracksWithOrder.localTracksByPid) {
+    for (const localTrack of localTracks) {
+      switch (localTrack.type) {
+        case 'thread':
+          allTrackThreads.add(localTrack.threadIndex);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  return allTrackThreads;
 }
 
 // Consider threads whose sample score is less than 5% of the maximum sample score to be idle.
@@ -917,7 +1051,10 @@ const IDLE_THRESHOLD_FRACTION = 0.05;
 
 // Return a non-empty set of threads that should be shown by default.
 export function computeDefaultVisibleThreads(
-  profile: Profile
+  profile: Profile,
+  tracksWithOrder: TracksWithOrder,
+  threadActivityScores: Array<ThreadActivityScore>,
+  includeParentProcessThreads: boolean
 ): Set<ThreadIndex> {
   const threads = profile.threads;
   if (threads.length === 0) {
@@ -932,16 +1069,16 @@ export function computeDefaultVisibleThreads(
     return new Set(profile.meta.initialVisibleThreads);
   }
 
+  const allTrackThreads = computeAllTrackThreads(tracksWithOrder);
+
   // First, compute a score for every thread.
-  const maxCpuDeltaPerInterval = computeMaxCPUDeltaPerInterval(profile);
-  const scores = threads.map((thread, threadIndex) => {
-    const score = _computeThreadDefaultVisibilityScore(
-      profile,
-      thread,
-      maxCpuDeltaPerInterval
-    );
-    return { threadIndex, score };
-  });
+  let scores = threadActivityScores.map((score, threadIndex) => ({
+    threadIndex,
+    score,
+  }));
+
+  // Next, filter the tracks by the tab selector threads.
+  scores = scores.filter(({ threadIndex }) => allTrackThreads.has(threadIndex));
 
   // Next, sort the threads by score.
   scores.sort(({ score: a }, { score: b }) => {
@@ -962,11 +1099,33 @@ export function computeDefaultVisibleThreads(
   // to the thread with the most "sampleScore" activity.
   // We keep all threads whose sampleScore is at least 5% of the highest
   // sampleScore, and also any threads which are otherwise essential.
+  // We also remove the parent process if that was requested. That's why we
+  // have to ignore their scores while computing the highest score.
   const highestSampleScore = Math.max(
-    ...scores.map(({ score }) => score.sampleScore)
+    ...scores.map(({ score }) => {
+      if (score.isInParentProcess && !includeParentProcessThreads) {
+        // Do not account for the parent process threads if we do not want to
+        // include them for the visible threads by default.
+        return 0;
+      }
+      return score.sampleScore;
+    })
   );
   const thresholdSampleScore = highestSampleScore * IDLE_THRESHOLD_FRACTION;
-  const finalList = top15.filter(({ score }) => {
+  const tryToHideList = [];
+  let finalList = top15.filter((activityScore) => {
+    const { score } = activityScore;
+    if (score.isInParentProcess && !includeParentProcessThreads) {
+      // We try to hide this thread that belongs to the parent process.
+      // But when we hide all the threads we might encounter that all the
+      // threads are hidden now. For cases like this we would like to keep a
+      // tryToHideList, so we can add them back if the track is completely empty.
+      if (score.sampleScore >= thresholdSampleScore) {
+        tryToHideList.push(activityScore);
+      }
+      return false;
+    }
+
     if (score.isEssentialFirefoxThread) {
       return true; // keep.
     }
@@ -976,13 +1135,22 @@ export function computeDefaultVisibleThreads(
     return score.sampleScore >= thresholdSampleScore;
   });
 
+  if (finalList.length === 0) {
+    // We tried to hide the main process threads, but this resulted us to have
+    // an empty list. Put them back.
+    finalList = tryToHideList;
+  }
+
   return new Set(finalList.map(({ threadIndex }) => threadIndex));
 }
 
-type DefaultVisibilityScore = {|
+export type ThreadActivityScore = {|
   // Whether this thread is one of the essential threads that
   // should always be kept (unless there's too many of them).
   isEssentialFirefoxThread: boolean,
+  // Whether this thread belongs to the parent process. We do not want to show
+  // them by default if the tab selector is used.
+  isInParentProcess: boolean,
   // Whether this thread should be kept even if it looks very idle,
   // as long as there's a single sample with non-zero activity.
   isInterestingEvenWithMinimalActivity: boolean,
@@ -1003,31 +1171,33 @@ const AUDIO_THREAD_SAMPLE_SCORE_BOOST_FACTOR = 40;
 // See the DefaultVisibilityScore type for details.
 // If we have too many threads, we use this score to compare between
 // "interesting" threads to make sure we keep the most interesting ones.
-function _computeThreadDefaultVisibilityScore(
+export function computeThreadActivityScore(
   profile: Profile,
-  thread: Thread,
-  maxCpuDeltaPerInterval: number | null
-): DefaultVisibilityScore {
+  thread: RawThread,
+  referenceCPUDeltaPerMs: number
+): ThreadActivityScore {
   const isEssentialFirefoxThread = _isEssentialFirefoxThread(thread);
+  const isInParentProcess = thread.processType === 'default';
   const isInterestingEvenWithMinimalActivity =
     _isFirefoxMediaThreadWhichIsUsuallyIdle(thread);
   const sampleScore = _computeThreadSampleScore(
     profile,
     thread,
-    maxCpuDeltaPerInterval
+    referenceCPUDeltaPerMs
   );
   const boostedSampleScore = isInterestingEvenWithMinimalActivity
     ? sampleScore * AUDIO_THREAD_SAMPLE_SCORE_BOOST_FACTOR
     : sampleScore;
   return {
     isEssentialFirefoxThread,
+    isInParentProcess,
     isInterestingEvenWithMinimalActivity,
     sampleScore,
     boostedSampleScore,
   };
 }
 
-function _isEssentialFirefoxThread(thread: Thread): boolean {
+function _isEssentialFirefoxThread(thread: RawThread): boolean {
   return (
     // Don't hide the main thread of the parent process.
     (thread.name === 'GeckoMain' &&
@@ -1038,7 +1208,7 @@ function _isEssentialFirefoxThread(thread: Thread): boolean {
   );
 }
 
-function _isFirefoxMediaThreadWhichIsUsuallyIdle(thread: Thread): boolean {
+function _isFirefoxMediaThreadWhichIsUsuallyIdle(thread: RawThread): boolean {
   // Detect media threads: they are usually very idle, but are interesting
   // as soon as there's at least one sample. They're present with the media
   // preset, but not usually captured otherwise.
@@ -1052,12 +1222,12 @@ function _isFirefoxMediaThreadWhichIsUsuallyIdle(thread: Thread): boolean {
 // If the thread does not have CPU delta information, we compute a
 // "CPU-delta-like" number based on the number of samples which are in a
 // non-idle category.
-// If the profile has no cpu delta units, the return value is the number of
-// non-idle samples.
+// If the profile has no cpu delta units, the return value is based on the
+// number of non-idle samples.
 function _computeThreadSampleScore(
   { meta }: Profile,
-  { samples, stackTable }: Thread,
-  maxCpuDeltaPerInterval: number | null
+  { samples, stackTable, frameTable }: RawThread,
+  referenceCPUDeltaPerMs: number
 ): number {
   if (meta.sampleUnits && samples.threadCPUDelta) {
     // Sum up all CPU deltas in this thread, to compute a total
@@ -1071,17 +1241,26 @@ function _computeThreadSampleScore(
   // This thread has no CPU delta information.
   // Compute a score based on non-idle samples, in the same
   // units as the cpu delta score.
+  const defaultCategory = meta.categories
+    ? meta.categories.findIndex((c) => c.color === 'grey')
+    : -1;
   const idleCategoryIndex = meta.categories
     ? meta.categories.findIndex((c) => c.name === 'Idle')
     : -1;
+  const derivedStackTable = computeStackTableFromRawStackTable(
+    stackTable,
+    frameTable,
+    defaultCategory
+  );
   const nonIdleSampleCount = samples.stack.filter(
     (stack) =>
-      stack !== null && stackTable.category[stack] !== idleCategoryIndex
+      stack !== null && derivedStackTable.category[stack] !== idleCategoryIndex
   ).length;
-  return nonIdleSampleCount * (maxCpuDeltaPerInterval ?? 1);
+  const referenceCPUDeltaPerInterval = referenceCPUDeltaPerMs * meta.interval;
+  return nonIdleSampleCount * referenceCPUDeltaPerInterval;
 }
 
-function _findDefaultThread(threads: Thread[]): Thread | null {
+function _findDefaultThread(threads: RawThread[]): RawThread | null {
   if (threads.length === 0) {
     // Tests may have no threads.
     return null;
@@ -1115,7 +1294,7 @@ function _indexesAreValid(listLength: number, indexes: number[]) {
 export function getSearchFilteredGlobalTracks(
   tracks: GlobalTrack[],
   globalTrackNames: string[],
-  threads: Thread[],
+  threads: RawThread[],
   searchFilter: string
 ): Set<TrackIndex> | null {
   if (!searchFilter) {
@@ -1209,7 +1388,7 @@ export function getSearchFilteredGlobalTracks(
 export function getSearchFilteredLocalTracksByPid(
   localTracksByPid: Map<Pid, LocalTrack[]>,
   localTrackNamesByPid: Map<Pid, string[]>,
-  threads: Thread[],
+  threads: RawThread[],
   searchFilter: string
 ): Map<Pid, Set<TrackIndex>> | null {
   if (!searchFilter) {
@@ -1308,6 +1487,60 @@ export function getSearchFilteredLocalTracksByPid(
 }
 
 /**
+ * Get the type and return the type filtered global tracks.
+ */
+export function getTypeFilteredGlobalTracks(
+  tracks: GlobalTrack[],
+  type: string
+): Set<TrackIndex> | null {
+  if (!type) {
+    return null;
+  }
+
+  const typeFilteredGlobalTracks = new Set();
+
+  for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+    const globalTrack = tracks[trackIndex];
+
+    if (globalTrack.type === type) {
+      typeFilteredGlobalTracks.add(trackIndex);
+    }
+  }
+
+  return typeFilteredGlobalTracks;
+}
+
+/**
+ * Get the type and return the filtered by type local tracks by Pid.
+ */
+export function getTypeFilteredLocalTracksByPid(
+  localTracksByPid: Map<Pid, LocalTrack[]>,
+  type: string
+): Map<Pid, Set<TrackIndex>> | null {
+  if (!type) {
+    return null;
+  }
+
+  const typeFilteredLocalTracksByPid = new Map();
+  for (const [pid, tracks] of localTracksByPid) {
+    const typeFilteredLocalTracks = new Set();
+
+    for (let trackIndex = 0; trackIndex < tracks.length; trackIndex++) {
+      const localTrack = tracks[trackIndex];
+      if (localTrack.type === type) {
+        typeFilteredLocalTracks.add(trackIndex);
+      }
+    }
+    if (typeFilteredLocalTracks.size > 0) {
+      // Only add the global track when the are some type filtered local tracks.
+      typeFilteredLocalTracksByPid.set(pid, typeFilteredLocalTracks);
+    }
+  }
+
+  return typeFilteredLocalTracksByPid;
+}
+
+/**
  * Returns the track reference from tid.
  * Returns null if the given tid is not found.
  */
@@ -1315,7 +1548,7 @@ export function getTrackReferenceFromTid(
   tid: Tid,
   globalTracks: GlobalTrack[],
   localTracksByPid: Map<Pid, LocalTrack[]>,
-  threads: Thread[]
+  threads: RawThread[]
 ): TrackReference | null {
   // First, check if it's a global track.
   for (

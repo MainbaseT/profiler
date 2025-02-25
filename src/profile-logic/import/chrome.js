@@ -4,8 +4,8 @@
 // @flow
 import type {
   Profile,
-  StackTable,
-  Thread,
+  RawThread,
+  RawStackTable,
   IndexIntoFuncTable,
   IndexIntoStackTable,
   IndexIntoResourceTable,
@@ -16,6 +16,7 @@ import {
   getEmptyProfile,
   getEmptyThread,
 } from '../../profile-logic/data-structures';
+import { StringTable } from '../../utils/string-table';
 import { ensureExists, coerce } from '../../utils/flow';
 import {
   INSTANT,
@@ -24,7 +25,10 @@ import {
   INTERVAL_END,
 } from 'firefox-profiler/app-logic/constants';
 
-import { getOrCreateURIResource } from '../../profile-logic/profile-data';
+import {
+  getOrCreateURIResource,
+  getTimeRangeForThread,
+} from '../../profile-logic/profile-data';
 
 // Chrome Tracing Event Spec:
 // https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
@@ -41,7 +45,8 @@ export type TracingEventUnion =
   | ProcessSortIndexEvent
   | ThreadSortIndexEvent
   | ScreenshotEvent
-  | FallbackEndEvent;
+  | FallbackEndEvent
+  | TracingStartedInBrowserEvent;
 
 type TracingEvent<Event> = {|
   cat: string,
@@ -178,6 +183,11 @@ type ScreenshotEvent = TracingEvent<{|
   args: { snapshot: string },
 |}>;
 
+type TracingStartedInBrowserEvent = TracingEvent<{|
+  name: 'TracingStartedInBrowser',
+  ph: 'I',
+|}>;
+
 function wrapCpuProfileInEvent(cpuProfile: CpuProfileData): CpuProfileEvent {
   return {
     name: 'CpuProfile',
@@ -194,7 +204,8 @@ function wrapCpuProfileInEvent(cpuProfile: CpuProfileData): CpuProfileEvent {
 }
 
 export function attemptToConvertChromeProfile(
-  json: mixed
+  json: mixed,
+  profileUrl?: string
 ): Promise<Profile> | null {
   if (!json) {
     return null;
@@ -261,11 +272,11 @@ export function attemptToConvertChromeProfile(
     list.push((tracingEvent: any));
   }
 
-  return processTracingEvents(eventsByName);
+  return processTracingEvents(eventsByName, profileUrl);
 }
 
 type ThreadInfo = {
-  thread: Thread,
+  thread: RawThread,
   funcKeyToFuncId: Map<string, IndexIntoFuncTable>,
   nodeIdToStackId: Map<number | void, IndexIntoStackTable | null>,
   originToResourceIndex: Map<string, IndexIntoResourceTable>,
@@ -304,7 +315,7 @@ function findEvents<
 
 function getThreadInfo(
   threadInfoByPidAndTid: Map<string, ThreadInfo>,
-  threadInfoByThread: Map<Thread, ThreadInfo>,
+  threadInfoByThread: Map<RawThread, ThreadInfo>,
   eventsByName: Map<string, TracingEventUnion[]>,
   profile: Profile,
   chunk: TracingEventUnion
@@ -483,7 +494,8 @@ function makeFunctionInfoFinder(categories) {
 }
 
 async function processTracingEvents(
-  eventsByName: Map<string, TracingEventUnion[]>
+  eventsByName: Map<string, TracingEventUnion[]>,
+  profileUrl?: string
 ): Promise<Profile> {
   const profile = getEmptyProfile();
   profile.meta.categories = [
@@ -541,8 +553,12 @@ async function processTracingEvents(
         (e) => e.id === id && e.pid === pid
       );
     } else if (profileEvent.name === 'CpuProfile') {
-      threadInfo.lastSeenTime =
-        (profileEvent.args.data.cpuProfile.startTime: any) / 1000;
+      // Assume profiling starts exactly on profile start time.
+      threadInfo.lastSeenTime = profile.meta.profilingStartTime =
+        profileEvent.args.data.cpuProfile.startTime / 1000;
+      profile.meta.profilingEndTime =
+        profileEvent.args.data.cpuProfile.endTime / 1000;
+
       profileChunks = [profileEvent];
     }
 
@@ -563,10 +579,12 @@ async function processTracingEvents(
         funcTable,
         frameTable,
         stackTable,
-        stringTable,
+        stringArray,
         samples: samplesTable,
         resourceTable,
       } = thread;
+
+      const stringTable = StringTable.withBackingArray(stringArray);
 
       if (nodes) {
         const parentMap = new Map();
@@ -662,7 +680,6 @@ async function processTracingEvents(
           frameTable.func[frameIndex] = funcId;
           frameTable.nativeSymbol[frameIndex] = null;
           frameTable.innerWindowID[frameIndex] = 0;
-          frameTable.implementation[frameIndex] = null;
           frameTable.line[frameIndex] =
             lineNumber === undefined ? null : lineNumber;
           frameTable.column[frameIndex] =
@@ -670,18 +687,9 @@ async function processTracingEvents(
           frameTable.length = Math.max(frameTable.length, frameIndex + 1);
 
           stackTable.frame.push(frameIndex);
-          stackTable.category.push(category);
-          stackTable.subcategory.push(0);
           stackTable.prefix.push(prefixStackIndex);
           nodeIdToStackId.set(nodeIndex, stackTable.length++);
         }
-      }
-
-      if (profileEvent.name === 'CpuProfile') {
-        profile.meta.profilingStartTime =
-          profileEvent.args.data.cpuProfile.startTime / 1000;
-        profile.meta.profilingEndTime =
-          profileEvent.args.data.cpuProfile.endTime / 1000;
       }
 
       // Chrome profiles sample much more frequently than Gecko ones do, and they store
@@ -709,7 +717,7 @@ async function processTracingEvents(
             'Could not find the eventDelay in samplesTable inside the newly created Chrome profile thread.'
           ).push(null);
           samplesTable.stack.push(stackIndex);
-          samplesTable.time.push(threadInfo.lastSampledTime);
+          ensureExists(samplesTable.time).push(threadInfo.lastSampledTime);
           samplesTable.length++;
         }
       }
@@ -735,6 +743,59 @@ async function processTracingEvents(
     profile
   );
 
+  // Figure out the profiling start and end times if they haven't been found yet.
+  // CpuProfile traces would have already found and updated this, we should do
+  // it for the other tracing formats only.
+  if (
+    profile.meta.profilingStartTime === undefined &&
+    profile.meta.profilingEndTime === undefined &&
+    eventsByName.has('TracingStartedInBrowser')
+  ) {
+    const tracingStartedEvent = ensureExists(
+      eventsByName.get('TracingStartedInBrowser')
+    )[0];
+    if (
+      tracingStartedEvent.ts !== undefined &&
+      Number.isFinite(tracingStartedEvent.ts)
+    ) {
+      // We know the start easily, but we have to compute the end time.
+      let profilingEndTime = -Infinity;
+
+      profile.threads.forEach((thread) => {
+        const threadRange = getTimeRangeForThread(
+          thread,
+          profile.meta.interval
+        );
+        profilingEndTime = Math.max(profilingEndTime, threadRange.end);
+      });
+
+      profile.meta.profilingStartTime = tracingStartedEvent.ts / 1000;
+      profile.meta.profilingEndTime = profilingEndTime;
+    }
+  }
+
+  if (profileUrl) {
+    // Get profile start time from profile URL if available. Timestamp format is what
+    // is generated by the Chrome DevTools UI when saving profiles. Technically, that
+    // timestamp is of profile save instead of profile start, but one can generate a
+    // more accurate start timestamp through e.g. handling the Chrome DevTools
+    // Protocol `Profiler.consoleProfileStarted` event.
+    const timeStampRe = /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/g;
+    let match;
+    let curMatch;
+    // Find the last match in case there are more timestamps in the path.
+    while ((curMatch = timeStampRe.exec(profileUrl)) !== null) {
+      match = curMatch;
+    }
+    if (match) {
+      const [, year, month, day, hour, minute, second] = match;
+      const dateTimeString = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+      const startTime = new Date(dateTimeString);
+      profile.meta.startTime =
+        startTime.getTime() - (profile.meta.profilingStartTime ?? 0);
+    }
+  }
+
   profile.threads.sort((threadA, threadB) => {
     const threadInfoA = threadInfoByThread.get(threadA);
     const threadInfoB = threadInfoByThread.get(threadB);
@@ -759,7 +820,7 @@ async function processTracingEvents(
 
 async function extractScreenshots(
   threadInfoByPidAndTid: Map<string, ThreadInfo>,
-  threadInfoByThread: Map<Thread, ThreadInfo>,
+  threadInfoByThread: Map<RawThread, ThreadInfo>,
   eventsByName: Map<string, TracingEventUnion[]>,
   profile: Profile,
   screenshots: ?(ScreenshotEvent[])
@@ -780,6 +841,8 @@ async function extractScreenshots(
     screenshots[0]
   );
 
+  const stringTable = StringTable.withBackingArray(thread.stringArray);
+
   const graphicsIndex = ensureExists(profile.meta.categories).findIndex(
     (category) => category.name === 'Graphics'
   );
@@ -799,13 +862,13 @@ async function extractScreenshots(
     }
     thread.markers.data.push({
       type: 'CompositorScreenshot',
-      url: thread.stringTable.indexForString(urlString),
+      url: stringTable.indexForString(urlString),
       windowID: 'id',
       windowWidth: size.width,
       windowHeight: size.height,
     });
     thread.markers.name.push(
-      thread.stringTable.indexForString('CompositorScreenshot')
+      stringTable.indexForString('CompositorScreenshot')
     );
     thread.markers.startTime.push(screenshot.ts / 1000);
     thread.markers.endTime.push(null);
@@ -843,7 +906,7 @@ function getImageSize(
  * For sanity, check that stacks are ordered where the prefix stack
  * always preceeds the current stack index in the StackTable.
  */
-function assertStackOrdering(stackTable: StackTable) {
+function assertStackOrdering(stackTable: RawStackTable) {
   const visitedStacks = new Set([null]);
   for (let i = 0; i < stackTable.length; i++) {
     if (!visitedStacks.has(stackTable.prefix[i])) {
@@ -858,7 +921,7 @@ function assertStackOrdering(stackTable: StackTable) {
  */
 function extractMarkers(
   threadInfoByPidAndTid: Map<string, ThreadInfo>,
-  threadInfoByThread: Map<Thread, ThreadInfo>,
+  threadInfoByThread: Map<RawThread, ThreadInfo>,
   eventsByName: Map<string, TracingEventUnion[]>,
   profile: Profile
 ) {
@@ -935,7 +998,8 @@ function extractMarkers(
           event
         );
         const { thread } = threadInfo;
-        const { markers, stringTable } = thread;
+        const { markers, stringArray } = thread;
+        const stringTable = StringTable.withBackingArray(stringArray);
         let argData: MixedObject | null = null;
         if (event.args && typeof event.args === 'object') {
           argData = (event.args: any).data || null;
