@@ -24,14 +24,27 @@ export type MarkerFormatType =
   | 'url'
   // Show the file path, and handle PII sanitization.
   | 'file-path'
+  // Show regular string, and handle PII sanitization.
+  | 'sanitized-string'
   // Important, do not put URL or file path information here, as it will not be
   // sanitized. Please be careful with including other types of PII here as well.
   // e.g. "Label: Some String"
   | 'string'
-  /// An index into a (currently) thread-local string table, aka UniqueStringArray
+  /// An index into a (currently) thread-local string table, aka StringTable
   /// This is effectively an integer, so wherever we need to display this value, we
   /// must first perform a lookup into the appropriate string table.
   | 'unique-string'
+
+  // ----------------------------------------------------
+  // Flow types.
+  // A flow ID is a u64 identifier that's unique across processes. In the current
+  // implementation, we represent them as hex strings, as string table indexes.
+  // A terminating flow ID is a flow ID that, when used in a marker with timestamp T,
+  // makes it so that if the same flow ID is used in a marker whose timestamp is
+  // after T, that flow ID is considered to refer to a different flow.
+  | 'flow-id'
+  | 'terminating-flow-id'
+
   // ----------------------------------------------------
   // Numeric types
 
@@ -105,6 +118,29 @@ export type MarkerGraph = {|
   color?: GraphColor,
 |};
 
+export type MarkerSchemaField = {|
+  // The property key of the marker data property that carries the field value.
+  key: string,
+
+  // An optional user-facing label.
+  // If no label is provided, the key is displayed instead.
+  label?: string,
+
+  // The format / type of this field. This affects how the field's value is
+  // displayed and determines which types of values are accepted for this field.
+  format: MarkerFormatType,
+
+  // If present and set to true, the marker search string will be matched
+  // against the values of this field when determining which markers match the
+  // search.
+  searchable?: boolean,
+
+  // If present and set to true, this field will not be shown in the list
+  // of fields in the tooltip or in the sidebar. Such fields can still be
+  // used inside labels and they can be searchable.
+  hidden?: boolean,
+|};
+
 export type MarkerSchema = {|
   // The unique identifier for this marker.
   name: string, // e.g. "CC"
@@ -125,23 +161,27 @@ export type MarkerSchema = {|
   // The locations to display
   display: MarkerDisplayLocation[],
 
-  data: Array<
-    | {|
-        key: string,
-        // If no label is provided, the key is displayed.
-        label?: string,
-        format: MarkerFormatType,
-        searchable?: boolean,
-      |}
-    | {|
-        // This type is a static bit of text that will be displayed
-        label: string,
-        value: string,
-      |},
-  >,
+  // The fields that can be present on markers of this type.
+  // Not all listed fields have to be present on every marker (they're all optional).
+  fields: MarkerSchemaField[],
+
+  // An optional description for markers of this type.
+  // Will be displayed to the user.
+  description?: string,
 
   // if present, give the marker its own local track
   graphs?: Array<MarkerGraph>,
+
+  // If set to true, markers of this type are assumed to be well-nested with all
+  // other stack-based markers on the same thread. Stack-based markers may
+  // be displayed in a different part of the marker chart than non-stack-based
+  // markers.
+  // Instant markers are always well-nested.
+  // For interval markers, or for intervals defined by a start and an end marker,
+  // well-nested means that, for all marker-defined timestamp intervals A and B,
+  // A either fully encompasses B or is fully encompassed by B - there is no
+  // partial overlap.
+  isStackBased?: boolean,
 |};
 
 export type MarkerSchemaByName = ObjectMap<MarkerSchema>;
@@ -306,9 +346,14 @@ type GCMajorCompleted_Shared = {|
   // 'None' as a reason.
   nonincremental_reason?: 'None' | string,
 
-  // The allocated space for the whole heap before the GC started.
+  // The total size of GC things before and after the GC.
   allocated_bytes: number,
   post_heap_size?: number,
+
+  // The total size of malloc data owned by GC things before and after the GC.
+  // Added in Firefox v135 (Bug 1933205).
+  pre_malloc_heap_size?: number,
+  post_malloc_heap_size?: number,
 
   // Only present if non-zero.
   added_chunks?: number,
@@ -451,6 +496,7 @@ export type GCSliceMarkerPayload_Gecko = {|
  * that redirects are logged as well.
  */
 
+export type NetworkHttpVersion = 'h3' | 'h2' | 'http/1.1' | 'http/1.0';
 export type NetworkStatus =
   | 'STATUS_START'
   | 'STATUS_STOP'
@@ -496,6 +542,20 @@ export type NetworkPayload = {|
   // It's always absent in Firefox < 98 because we couldn't capture private
   // browsing data back then.
   isPrivateBrowsing?: boolean,
+  httpVersion?: NetworkHttpVersion,
+
+  // Used to express class dependencies and characteristics.
+  // Possible flags: Leader, Follower, Speculative, Background, Unblocked,
+  // Throttleable, UrgentStart, DontThrottle, Tail, TailAllowed, and
+  // TailForbidden. Multiple flags can be set, separated by '|',
+  // or we use 'Unset' if no flag is set.
+  classOfService?: string,
+
+  // Used to show the request status (nsresult nsIRequest::status)
+  requestStatus?: string,
+
+  // Used to show the HTTP response status code
+  responseStatus?: number,
 
   // NOTE: the following comments are valid for the merged markers. For the raw
   // markers, startTime and endTime have different meanings. Please look
@@ -761,6 +821,13 @@ export type UrlMarkerPayload = {|
   url: string,
 |};
 
+export type HostResolverPayload = {|
+  type: 'HostResolver',
+  host: string,
+  originSuffix: string,
+  flags: string,
+|};
+
 /**
  * The union of all the different marker payloads that profiler.firefox.com knows about,
  * this is not guaranteed to be all the payloads that we actually get from the Gecko
@@ -791,7 +858,8 @@ export type MarkerPayload =
   | JankPayload
   | BrowsertimeMarkerPayload
   | NoPayloadUserData
-  | UrlMarkerPayload;
+  | UrlMarkerPayload
+  | HostResolverPayload;
 
 export type MarkerPayload_Gecko =
   | GPUMarkerPayload

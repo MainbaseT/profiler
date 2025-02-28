@@ -50,7 +50,7 @@ export function viewProfileFromZip(
     const file = zipFileTable.file[zipFileIndex];
     if (!file) {
       throw new Error(
-        'Attempted to load a zip file that did not exist or was a directory.'
+        'Attempted to load an archive that did not exist or was a directory.'
       );
     }
 
@@ -59,7 +59,8 @@ export function viewProfileFromZip(
     try {
       // Attempt to unserialize the profile.
       const profile = await unserializeProfileOfArbitraryFormat(
-        await file.async('string')
+        await file.async('string'),
+        pathInZipFile
       );
 
       // Since this is an async function, there can be race conditions. Prevent this by
@@ -74,7 +75,7 @@ export function viewProfileFromZip(
       }
     } catch (error) {
       console.error(
-        'Failed to process the profile in the zip file with the following error:'
+        'Failed to process the profile in the archive with the following error:'
       );
       console.error(error);
       dispatch({ type: 'FAILED_TO_PROCESS_PROFILE_FROM_ZIP_FILE', error });
