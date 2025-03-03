@@ -30,6 +30,7 @@ AppHeader--github-icon =
 ## AppViewRouter
 ## This is used for displaying errors when loading the application.
 
+AppViewRouter--error-from-post-message = Det gick inte att importera profilen.
 AppViewRouter--error-unpublished = Det gick inte att hämta profilen från { -firefox-brand-name }.
 AppViewRouter--error-from-file = Det gick inte att läsa filen eller analysera profilen i den.
 AppViewRouter--error-local = Inte implementerat ännu.
@@ -118,6 +119,7 @@ CallNodeContextMenu--searchfox = Leta upp funktionsnamnet på Searchfox
 CallNodeContextMenu--copy-function-name = Kopiera funktionsnamn
 CallNodeContextMenu--copy-script-url = Kopiera skript-URL
 CallNodeContextMenu--copy-stack = Kopiera stack
+CallNodeContextMenu--show-the-function-in-devtools = Visa funktionen i DevTools
 
 ## CallTree
 ## This is the component for Call Tree panel.
@@ -337,6 +339,15 @@ Home--load-files-from-other-tools2 =
     vilken fil som helst som använder <dhat>dhat-formatet</dhat> eller <traceevent>Googles spårningshändelse
     Format</traceevent>. <write>Lär dig hur du skriver din
     egen importör</write>.
+Home--install-chrome-extension = Installera tillägget för Chrome
+Home--chrome-extension-instructions =
+    Använd tillägget <a>{ -profiler-brand-name } för Chrome</a>
+    för att fånga prestandaprofiler i Chrome och analysera dem i
+    { -profiler-brand-name }. Installera tillägget från Chrome Web Store.
+Home--chrome-extension-recording-instructions =
+    När det är installerat använder du tilläggets verktygsfältsikon
+    eller genvägarna för att starta och stoppa profilering.
+    Du kan också exportera profiler och ladda dem här för detaljerad analys.
 
 ## IdleSearchField
 ## The component that is used for all the search inputs in the application.
@@ -623,6 +634,14 @@ NumberFormat--short-date = { SHORTDATE($date) }
 
 PanelSearch--search-field-hint = Visste du att du kan använda komma (,) för att söka med flera termer?
 
+## Profile Name Button
+
+ProfileName--edit-profile-name-button =
+    .title = Redigera profilnamn
+ProfileName--edit-profile-name-input =
+    .title = Redigera profilnamn
+    .aria-label = Profilnamn
+
 ## Profile Delete Button
 
 # This string is used on the tooltip of the published profile links delete button in uploaded recordings page.
@@ -670,6 +689,7 @@ ProfileFilterNavigator--full-range-with-duration = Fullt intervall ({ $fullRange
 
 ## Profile Loader Animation
 
+ProfileLoaderAnimation--loading-from-post-message = Importerar och bearbetar profilen…
 ProfileLoaderAnimation--loading-unpublished = Importerar profilen direkt från { -firefox-brand-name }…
 ProfileLoaderAnimation--loading-from-file = Läser fil och bearbetar profil…
 ProfileLoaderAnimation--loading-local = Inte implementerat ännu.
@@ -745,6 +765,13 @@ TabBar--marker-table-tab = Markörtabell
 TabBar--network-tab = Nätverk
 TabBar--js-tracer-tab = JS Tracer
 
+## TabSelectorMenu
+## This component is a context menu that's opened when you click on the root
+## range at the top left corner for profiler analysis view. It's used to switch
+## between tabs that were captured in the profile.
+
+TabSelectorMenu--all-tabs-and-windows = Alla flikar och fönster
+
 ## TrackContextMenu
 ## This is used as a context menu for timeline to organize the tracks in the
 ## analysis UI.
@@ -761,6 +788,10 @@ TrackContextMenu--hide-other-screenshots-tracks = Dölj andra Skärmdump-spår
 TrackContextMenu--hide-track = Dölj "{ $trackName }"
 TrackContextMenu--show-all-tracks = Visa alla spår
 TrackContextMenu--show-local-tracks-in-process = Visa alla spår i denna process
+# This is used as the context menu item to hide all tracks of the selected track's type.
+# Variables:
+#   $type (String) - Name of the type of selected track to hide.
+TrackContextMenu--hide-all-tracks-by-selected-track-type = Dölja alla spår av typen "{ $type }"
 # This is used in the tracks context menu as a button to show all the tracks
 # that match the search filter.
 TrackContextMenu--show-all-matching-tracks = Visa alla matchande spår

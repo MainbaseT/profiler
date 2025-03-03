@@ -81,44 +81,48 @@ Object {
     "logicalCPUs": 0,
     "markerSchema": Array [
       Object {
-        "data": Array [],
         "display": Array [
           "marker-chart",
           "marker-table",
           "timeline-memory",
         ],
+        "fields": Array [],
         "name": "GCMajor",
       },
       Object {
-        "data": Array [],
         "display": Array [
           "marker-chart",
           "marker-table",
           "timeline-memory",
         ],
+        "fields": Array [],
         "name": "GCMinor",
       },
       Object {
-        "data": Array [],
         "display": Array [
           "marker-chart",
           "marker-table",
           "timeline-memory",
         ],
+        "fields": Array [],
         "name": "GCSlice",
       },
       Object {
-        "data": Array [],
         "display": Array [
           "marker-chart",
           "marker-table",
           "timeline-memory",
         ],
+        "fields": Array [],
         "name": "CC",
         "tooltipLabel": "Cycle Collect",
       },
       Object {
-        "data": Array [
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+        ],
+        "fields": Array [
           Object {
             "format": "string",
             "key": "operation",
@@ -138,14 +142,14 @@ Object {
             "searchable": true,
           },
         ],
+        "name": "FileIO",
+      },
+      Object {
         "display": Array [
           "marker-chart",
           "marker-table",
         ],
-        "name": "FileIO",
-      },
-      Object {
-        "data": Array [
+        "fields": Array [
           Object {
             "format": "microseconds",
             "key": "sampleStartTimeUs",
@@ -157,14 +161,15 @@ Object {
             "label": "Sample end time",
           },
         ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-        ],
         "name": "MediaSample",
       },
       Object {
-        "data": Array [
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+          "timeline-overview",
+        ],
+        "fields": Array [
           Object {
             "format": "integer",
             "key": "elementsTraversed",
@@ -191,15 +196,14 @@ Object {
             "label": "Styles reused",
           },
         ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-          "timeline-overview",
-        ],
         "name": "Styles",
       },
       Object {
-        "data": Array [
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+        ],
+        "fields": Array [
           Object {
             "format": "string",
             "key": "prefName",
@@ -222,15 +226,16 @@ Object {
             "label": "Value",
           },
         ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-        ],
         "name": "PreferenceRead",
       },
       Object {
         "chartLabel": "{marker.data.name}",
-        "data": Array [
+        "description": "UserTiming is created using the DOM APIs performance.mark() and performance.measure().",
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+        ],
+        "fields": Array [
           Object {
             "format": "string",
             "key": "name",
@@ -238,22 +243,10 @@ Object {
             "searchable": true,
           },
           Object {
-            "label": "Marker",
-            "value": "UserTiming",
-          },
-          Object {
             "format": "string",
             "key": "entryType",
             "label": "Entry Type",
           },
-          Object {
-            "label": "Description",
-            "value": "UserTiming is created using the DOM APIs performance.mark() and performance.measure().",
-          },
-        ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
         ],
         "name": "UserTiming",
         "tableLabel": "{marker.data.name}",
@@ -261,7 +254,11 @@ Object {
       },
       Object {
         "chartLabel": "{marker.name} — {marker.data.name}",
-        "data": Array [
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+        ],
+        "fields": Array [
           Object {
             "format": "string",
             "key": "name",
@@ -269,15 +266,14 @@ Object {
             "searchable": true,
           },
         ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-        ],
         "name": "Text",
         "tableLabel": "{marker.name} — {marker.data.name}",
       },
       Object {
-        "data": Array [
+        "display": Array [
+          "marker-table",
+        ],
+        "fields": Array [
           Object {
             "format": "string",
             "key": "module",
@@ -291,15 +287,17 @@ Object {
             "searchable": true,
           },
         ],
-        "display": Array [
-          "marker-table",
-        ],
         "name": "Log",
         "tableLabel": "({marker.data.module}) {marker.data.name}",
       },
       Object {
         "chartLabel": "{marker.data.eventType}",
-        "data": Array [
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+          "timeline-overview",
+        ],
+        "fields": Array [
           Object {
             "format": "duration",
             "key": "latency",
@@ -312,17 +310,17 @@ Object {
             "searchable": true,
           },
         ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-          "timeline-overview",
-        ],
         "name": "DOMEvent",
         "tableLabel": "{marker.data.eventType}",
         "tooltipLabel": "{marker.data.eventType} — DOMEvent",
       },
       Object {
-        "data": Array [
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+          "timeline-overview",
+        ],
+        "fields": Array [
           Object {
             "format": "string",
             "key": "category",
@@ -330,48 +328,32 @@ Object {
             "searchable": true,
           },
         ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-          "timeline-overview",
-        ],
-        "name": "Paint",
+        "name": "tracing",
       },
       Object {
-        "data": Array [
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+          "timeline-overview",
+        ],
+        "fields": Array [
           Object {
             "format": "string",
             "key": "category",
             "label": "Type",
             "searchable": true,
           },
-        ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-          "timeline-overview",
-        ],
-        "name": "Navigation",
-      },
-      Object {
-        "data": Array [
-          Object {
-            "format": "string",
-            "key": "category",
-            "label": "Type",
-            "searchable": true,
-          },
-        ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-          "timeline-overview",
         ],
         "name": "Layout",
       },
       Object {
         "chartLabel": "{marker.data.messageType}",
-        "data": Array [
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+          "timeline-ipc",
+        ],
+        "fields": Array [
           Object {
             "format": "string",
             "key": "messageType",
@@ -393,37 +375,76 @@ Object {
             "label": "To",
           },
         ],
-        "display": Array [
-          "marker-chart",
-          "marker-table",
-          "timeline-ipc",
-        ],
         "name": "IPC",
         "tableLabel": "{marker.name} — {marker.data.messageType} — {marker.data.niceDirection}",
         "tooltipLabel": "IPC — {marker.data.niceDirection}",
       },
       Object {
-        "data": Array [
-          Object {
-            "format": "string",
-            "key": "name",
-            "label": "Tick Reasons",
-            "searchable": true,
-          },
-        ],
         "display": Array [
           "marker-chart",
           "marker-table",
           "timeline-overview",
         ],
-        "name": "RefreshDriverTick",
+        "fields": Array [],
+        "name": "VisibleInTimelineOverview",
+      },
+      Object {
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+          "timeline-overview",
+        ],
+        "fields": Array [
+          Object {
+            "format": "string",
+            "key": "searchableString",
+            "label": "Searchable string field",
+            "searchable": true,
+          },
+          Object {
+            "format": "unique-string",
+            "key": "searchableUniqueString",
+            "label": "Searchable unique string field",
+            "searchable": true,
+          },
+          Object {
+            "format": "string",
+            "key": "nonSearchableString",
+            "label": "Non-searchable string field",
+            "searchable": false,
+          },
+          Object {
+            "format": "unique-string",
+            "key": "nonSearchableUniqueString",
+            "label": "Non-searchable unique string field",
+            "searchable": false,
+          },
+        ],
+        "name": "StringTesting",
+      },
+      Object {
+        "display": Array [
+          "marker-chart",
+          "marker-table",
+          "timeline-overview",
+        ],
+        "fields": Array [
+          Object {
+            "format": "string",
+            "hidden": true,
+            "key": "hiddenString",
+            "label": "Hidden string",
+            "searchable": true,
+          },
+        ],
+        "name": "MarkerWithHiddenField",
       },
     ],
     "misc": "",
     "oscpu": "",
     "physicalCPUs": 0,
     "platform": "",
-    "preprocessedProfileVersion": 48,
+    "preprocessedProfileVersion": 55,
     "processType": 0,
     "product": "Firefox",
     "sourceURL": "",
@@ -431,7 +452,7 @@ Object {
     "startTime": 0,
     "symbolicated": true,
     "toolkit": "",
-    "version": 29,
+    "version": 31,
   },
   "pages": Array [
     Object {
@@ -487,17 +508,6 @@ Object {
           6,
           7,
           8,
-        ],
-        "implementation": Array [
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
         ],
         "inlineDepth": Array [
           0,
@@ -850,17 +860,6 @@ Object {
         "weightType": "samples",
       },
       "stackTable": Object {
-        "category": Array [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-        ],
         "frame": Array [
           0,
           1,
@@ -884,42 +883,18 @@ Object {
           1,
           7,
         ],
-        "subcategory": Array [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-        ],
       },
-      "stringTable": UniqueStringArray {
-        "_array": Array [
-          "A",
-          "B",
-          "C",
-          "D",
-          "E",
-          "F",
-          "G",
-          "H",
-          "I",
-        ],
-        "_stringToIndex": Map {
-          "A" => 0,
-          "B" => 1,
-          "C" => 2,
-          "D" => 3,
-          "E" => 4,
-          "F" => 5,
-          "G" => 6,
-          "H" => 7,
-          "I" => 8,
-        },
-      },
+      "stringArray": Array [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "I",
+      ],
       "tid": 0,
       "unregisterTime": null,
     },
@@ -929,7 +904,6 @@ Object {
         "category": Array [],
         "column": Array [],
         "func": Array [],
-        "implementation": Array [],
         "inlineDepth": Array [],
         "innerWindowID": Array [],
         "length": 0,
@@ -962,12 +936,24 @@ Object {
           0,
         ],
         "data": Array [
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
+          Object {
+            "type": "A",
+          },
+          Object {
+            "type": "B",
+          },
+          Object {
+            "type": "C",
+          },
+          Object {
+            "type": "D",
+          },
+          Object {
+            "type": "E",
+          },
+          Object {
+            "type": "F",
+          },
           Object {
             "URI": "https://mozilla.org",
             "endTime": 6.5,
@@ -1087,34 +1073,20 @@ Object {
         "weightType": "samples",
       },
       "stackTable": Object {
-        "category": Array [],
         "frame": Array [],
         "length": 0,
         "prefix": Array [],
-        "subcategory": Array [],
       },
-      "stringTable": UniqueStringArray {
-        "_array": Array [
-          "A",
-          "B",
-          "C",
-          "D",
-          "E",
-          "F",
-          "Load 6: https://mozilla.org",
-          "Load 7: https://mozilla.org",
-        ],
-        "_stringToIndex": Map {
-          "A" => 0,
-          "B" => 1,
-          "C" => 2,
-          "D" => 3,
-          "E" => 4,
-          "F" => 5,
-          "Load 6: https://mozilla.org" => 6,
-          "Load 7: https://mozilla.org" => 7,
-        },
-      },
+      "stringArray": Array [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "Load 6: https://mozilla.org",
+        "Load 7: https://mozilla.org",
+      ],
       "tid": 0,
       "unregisterTime": null,
     },
@@ -1169,17 +1141,6 @@ Array [
         6,
         7,
         8,
-      ],
-      "implementation": Array [
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
       ],
       "inlineDepth": Array [
         0,
@@ -1532,17 +1493,6 @@ Array [
       "weightType": "samples",
     },
     "stackTable": Object {
-      "category": Array [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-      ],
       "frame": Array [
         0,
         1,
@@ -1566,42 +1516,18 @@ Array [
         1,
         7,
       ],
-      "subcategory": Array [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-      ],
     },
-    "stringTable": UniqueStringArray {
-      "_array": Array [
-        "A",
-        "B",
-        "C",
-        "D",
-        "E",
-        "F",
-        "G",
-        "H",
-        "I",
-      ],
-      "_stringToIndex": Map {
-        "A" => 0,
-        "B" => 1,
-        "C" => 2,
-        "D" => 3,
-        "E" => 4,
-        "F" => 5,
-        "G" => 6,
-        "H" => 7,
-        "I" => 8,
-      },
-    },
+    "stringArray": Array [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "G",
+      "H",
+      "I",
+    ],
     "tid": 0,
     "unregisterTime": null,
   },
@@ -1611,7 +1537,6 @@ Array [
       "category": Array [],
       "column": Array [],
       "func": Array [],
-      "implementation": Array [],
       "inlineDepth": Array [],
       "innerWindowID": Array [],
       "length": 0,
@@ -1644,12 +1569,24 @@ Array [
         0,
       ],
       "data": Array [
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
+        Object {
+          "type": "A",
+        },
+        Object {
+          "type": "B",
+        },
+        Object {
+          "type": "C",
+        },
+        Object {
+          "type": "D",
+        },
+        Object {
+          "type": "E",
+        },
+        Object {
+          "type": "F",
+        },
         Object {
           "URI": "https://mozilla.org",
           "endTime": 6.5,
@@ -1769,34 +1706,20 @@ Array [
       "weightType": "samples",
     },
     "stackTable": Object {
-      "category": Array [],
       "frame": Array [],
       "length": 0,
       "prefix": Array [],
-      "subcategory": Array [],
     },
-    "stringTable": UniqueStringArray {
-      "_array": Array [
-        "A",
-        "B",
-        "C",
-        "D",
-        "E",
-        "F",
-        "Load 6: https://mozilla.org",
-        "Load 7: https://mozilla.org",
-      ],
-      "_stringToIndex": Map {
-        "A" => 0,
-        "B" => 1,
-        "C" => 2,
-        "D" => 3,
-        "E" => 4,
-        "F" => 5,
-        "Load 6: https://mozilla.org" => 6,
-        "Load 7: https://mozilla.org" => 7,
-      },
-    },
+    "stringArray": Array [
+      "A",
+      "B",
+      "C",
+      "D",
+      "E",
+      "F",
+      "Load 6: https://mozilla.org",
+      "Load 7: https://mozilla.org",
+    ],
     "tid": 0,
     "unregisterTime": null,
   },
@@ -1807,7 +1730,9 @@ exports[`snapshots of selectors/profile matches the last stored run of markerThr
 Array [
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "D",
+    },
     "end": null,
     "name": "D",
     "start": 3,
@@ -1815,7 +1740,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "E",
+    },
     "end": null,
     "name": "E",
     "start": 4,
@@ -1823,7 +1750,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "F",
+    },
     "end": null,
     "name": "F",
     "start": 5,
@@ -1874,7 +1803,9 @@ exports[`snapshots of selectors/profile matches the last stored run of markerThr
 Array [
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "A",
+    },
     "end": null,
     "name": "A",
     "start": 0,
@@ -1882,7 +1813,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "B",
+    },
     "end": null,
     "name": "B",
     "start": 1,
@@ -1890,7 +1823,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "C",
+    },
     "end": null,
     "name": "C",
     "start": 2,
@@ -1898,7 +1833,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "D",
+    },
     "end": null,
     "name": "D",
     "start": 3,
@@ -1906,7 +1843,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "E",
+    },
     "end": null,
     "name": "E",
     "start": 4,
@@ -1914,7 +1853,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "F",
+    },
     "end": null,
     "name": "F",
     "start": 5,
@@ -1973,9 +1914,6 @@ Array [
       3,
     ],
     "instantOnly": true,
-    "label": Array [
-      "",
-    ],
     "length": 1,
     "name": "D",
     "start": Array [
@@ -1991,9 +1929,6 @@ Array [
       4,
     ],
     "instantOnly": true,
-    "label": Array [
-      "",
-    ],
     "length": 1,
     "name": "E",
     "start": Array [
@@ -2009,9 +1944,6 @@ Array [
       5,
     ],
     "instantOnly": true,
-    "label": Array [
-      "",
-    ],
     "length": 1,
     "name": "F",
     "start": Array [
@@ -2029,10 +1961,6 @@ Array [
       7,
     ],
     "instantOnly": false,
-    "label": Array [
-      "https://mozilla.org",
-      "https://mozilla.org",
-    ],
     "length": 2,
     "name": "Network Requests",
     "start": Array [
@@ -2047,7 +1975,9 @@ exports[`snapshots of selectors/profile matches the last stored run of markerThr
 Array [
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "D",
+    },
     "end": null,
     "name": "D",
     "start": 3,
@@ -2055,7 +1985,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "E",
+    },
     "end": null,
     "name": "E",
     "start": 4,
@@ -2063,7 +1995,9 @@ Array [
   },
   Object {
     "category": 0,
-    "data": null,
+    "data": Object {
+      "type": "F",
+    },
     "end": null,
     "name": "F",
     "start": 5,
@@ -2117,7 +2051,6 @@ Object {
   "forPath": Object {
     "selfTime": Object {
       "breakdownByCategory": null,
-      "breakdownByImplementation": null,
       "value": 0,
     },
     "totalTime": Object {
@@ -2171,9 +2104,6 @@ Object {
           ],
         },
       ],
-      "breakdownByImplementation": Object {
-        "native": 2,
-      },
       "value": 2,
     },
   },
@@ -2182,7 +2112,7 @@ Object {
 `;
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getCallNodeInfo 1`] = `
-CallNodeInfoImpl {
+CallNodeInfoNonInverted {
   "_cache": Map {},
   "_callNodeTable": Object {
     "category": Int32Array [
@@ -2196,7 +2126,7 @@ CallNodeInfoImpl {
       0,
       0,
     ],
-    "depth": Array [
+    "depth": Int32Array [
       0,
       1,
       2,
@@ -2253,16 +2183,16 @@ CallNodeInfoImpl {
       1,
       7,
     ],
-    "sourceFramesInlinedIntoSymbol": Array [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
+    "sourceFramesInlinedIntoSymbol": Int32Array [
+      -2,
+      -2,
+      -2,
+      -2,
+      -2,
+      -2,
+      -2,
+      -2,
+      -2,
     ],
     "subcategory": Int32Array [
       0,
@@ -2287,121 +2217,6 @@ CallNodeInfoImpl {
       9,
     ],
   },
-  "_isInverted": false,
-  "_nonInvertedCallNodeTable": Object {
-    "category": Int32Array [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-    ],
-    "depth": Array [
-      0,
-      1,
-      2,
-      2,
-      3,
-      2,
-      3,
-      2,
-      3,
-    ],
-    "func": Int32Array [
-      0,
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
-      8,
-    ],
-    "innerWindowID": Float64Array [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      2,
-      0,
-      0,
-    ],
-    "length": 9,
-    "maxDepth": 3,
-    "nextSibling": Int32Array [
-      -1,
-      -1,
-      3,
-      5,
-      -1,
-      7,
-      -1,
-      -1,
-      -1,
-    ],
-    "prefix": Int32Array [
-      -1,
-      0,
-      1,
-      1,
-      3,
-      1,
-      5,
-      1,
-      7,
-    ],
-    "sourceFramesInlinedIntoSymbol": Array [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-    ],
-    "subcategory": Int32Array [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-    ],
-    "subtreeRangeEnd": Uint32Array [
-      9,
-      9,
-      3,
-      5,
-      5,
-      7,
-      7,
-      9,
-      9,
-    ],
-  },
-  "_stackIndexToCallNodeIndex": Int32Array [
-    0,
-    1,
-    2,
-    3,
-    4,
-    5,
-    6,
-    7,
-    8,
-  ],
   "_stackIndexToNonInvertedCallNodeIndex": Int32Array [
     0,
     1,
@@ -2418,7 +2233,7 @@ CallNodeInfoImpl {
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getCallTree 1`] = `
 CallTree {
-  "_callNodeInfo": CallNodeInfoImpl {
+  "_callNodeInfo": CallNodeInfoNonInverted {
     "_cache": Map {},
     "_callNodeTable": Object {
       "category": Int32Array [
@@ -2432,7 +2247,7 @@ CallTree {
         0,
         0,
       ],
-      "depth": Array [
+      "depth": Int32Array [
         0,
         1,
         2,
@@ -2489,16 +2304,16 @@ CallTree {
         1,
         7,
       ],
-      "sourceFramesInlinedIntoSymbol": Array [
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
+      "sourceFramesInlinedIntoSymbol": Int32Array [
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
       ],
       "subcategory": Int32Array [
         0,
@@ -2523,121 +2338,6 @@ CallTree {
         9,
       ],
     },
-    "_isInverted": false,
-    "_nonInvertedCallNodeTable": Object {
-      "category": Int32Array [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-      ],
-      "depth": Array [
-        0,
-        1,
-        2,
-        2,
-        3,
-        2,
-        3,
-        2,
-        3,
-      ],
-      "func": Int32Array [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-      ],
-      "innerWindowID": Float64Array [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        2,
-        0,
-        0,
-      ],
-      "length": 9,
-      "maxDepth": 3,
-      "nextSibling": Int32Array [
-        -1,
-        -1,
-        3,
-        5,
-        -1,
-        7,
-        -1,
-        -1,
-        -1,
-      ],
-      "prefix": Int32Array [
-        -1,
-        0,
-        1,
-        1,
-        3,
-        1,
-        5,
-        1,
-        7,
-      ],
-      "sourceFramesInlinedIntoSymbol": Array [
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-      ],
-      "subcategory": Int32Array [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-      ],
-      "subtreeRangeEnd": Uint32Array [
-        9,
-        9,
-        3,
-        5,
-        5,
-        7,
-        7,
-        9,
-        9,
-      ],
-    },
-    "_stackIndexToCallNodeIndex": Int32Array [
-      0,
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
-      8,
-    ],
     "_stackIndexToNonInvertedCallNodeIndex": Int32Array [
       0,
       1,
@@ -2648,109 +2348,6 @@ CallTree {
       6,
       7,
       8,
-    ],
-  },
-  "_callNodeTable": Object {
-    "category": Int32Array [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-    ],
-    "depth": Array [
-      0,
-      1,
-      2,
-      2,
-      3,
-      2,
-      3,
-      2,
-      3,
-    ],
-    "func": Int32Array [
-      0,
-      1,
-      2,
-      3,
-      4,
-      5,
-      6,
-      7,
-      8,
-    ],
-    "innerWindowID": Float64Array [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      2,
-      0,
-      0,
-    ],
-    "length": 9,
-    "maxDepth": 3,
-    "nextSibling": Int32Array [
-      -1,
-      -1,
-      3,
-      5,
-      -1,
-      7,
-      -1,
-      -1,
-      -1,
-    ],
-    "prefix": Int32Array [
-      -1,
-      0,
-      1,
-      1,
-      3,
-      1,
-      5,
-      1,
-      7,
-    ],
-    "sourceFramesInlinedIntoSymbol": Array [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-    ],
-    "subcategory": Int32Array [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-    ],
-    "subtreeRangeEnd": Uint32Array [
-      9,
-      9,
-      3,
-      5,
-      5,
-      7,
-      7,
-      9,
-      9,
     ],
   },
   "_categories": Array [
@@ -2813,7 +2410,7 @@ CallTree {
   ],
   "_children": Array [],
   "_displayDataByIndex": Map {},
-  "_internal": CallTreeInternalImpl {
+  "_internal": CallTreeInternalNonInverted {
     "_callNodeHasChildren": Uint8Array [
       1,
       1,
@@ -2825,7 +2422,7 @@ CallTree {
       0,
       0,
     ],
-    "_callNodeInfo": CallNodeInfoImpl {
+    "_callNodeInfo": CallNodeInfoNonInverted {
       "_cache": Map {},
       "_callNodeTable": Object {
         "category": Int32Array [
@@ -2839,7 +2436,7 @@ CallTree {
           0,
           0,
         ],
-        "depth": Array [
+        "depth": Int32Array [
           0,
           1,
           2,
@@ -2896,16 +2493,16 @@ CallTree {
           1,
           7,
         ],
-        "sourceFramesInlinedIntoSymbol": Array [
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
+        "sourceFramesInlinedIntoSymbol": Int32Array [
+          -2,
+          -2,
+          -2,
+          -2,
+          -2,
+          -2,
+          -2,
+          -2,
+          -2,
         ],
         "subcategory": Int32Array [
           0,
@@ -2930,121 +2527,6 @@ CallTree {
           9,
         ],
       },
-      "_isInverted": false,
-      "_nonInvertedCallNodeTable": Object {
-        "category": Int32Array [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-        ],
-        "depth": Array [
-          0,
-          1,
-          2,
-          2,
-          3,
-          2,
-          3,
-          2,
-          3,
-        ],
-        "func": Int32Array [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8,
-        ],
-        "innerWindowID": Float64Array [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          2,
-          0,
-          0,
-        ],
-        "length": 9,
-        "maxDepth": 3,
-        "nextSibling": Int32Array [
-          -1,
-          -1,
-          3,
-          5,
-          -1,
-          7,
-          -1,
-          -1,
-          -1,
-        ],
-        "prefix": Int32Array [
-          -1,
-          0,
-          1,
-          1,
-          3,
-          1,
-          5,
-          1,
-          7,
-        ],
-        "sourceFramesInlinedIntoSymbol": Array [
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-          null,
-        ],
-        "subcategory": Int32Array [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-          0,
-        ],
-        "subtreeRangeEnd": Uint32Array [
-          9,
-          9,
-          3,
-          5,
-          5,
-          7,
-          7,
-          9,
-          9,
-        ],
-      },
-      "_stackIndexToCallNodeIndex": Int32Array [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-      ],
       "_stackIndexToNonInvertedCallNodeIndex": Int32Array [
         0,
         1,
@@ -3069,7 +2551,7 @@ CallTree {
         0,
         0,
       ],
-      "depth": Array [
+      "depth": Int32Array [
         0,
         1,
         2,
@@ -3126,16 +2608,16 @@ CallTree {
         1,
         7,
       ],
-      "sourceFramesInlinedIntoSymbol": Array [
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
+      "sourceFramesInlinedIntoSymbol": Int32Array [
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
       ],
       "subcategory": Int32Array [
         0,
@@ -3172,19 +2654,8 @@ CallTree {
         0,
         0,
       ],
-      "leaf": Float32Array [
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        2,
-        0,
-        0,
-      ],
       "rootTotalSummary": 2,
-      "self": Float32Array [
+      "self": Float64Array [
         0,
         0,
         0,
@@ -3195,7 +2666,7 @@ CallTree {
         0,
         0,
       ],
-      "total": Float32Array [
+      "total": Float64Array [
         2,
         2,
         0,
@@ -3214,6 +2685,7 @@ CallTree {
     0,
   ],
   "_thread": Object {
+    "eTLD+1": undefined,
     "frameTable": Object {
       "address": Array [
         -1,
@@ -3258,17 +2730,6 @@ CallTree {
         6,
         7,
         8,
-      ],
-      "implementation": Array [
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
-        null,
       ],
       "inlineDepth": Array [
         0,
@@ -3407,7 +2868,11 @@ CallTree {
         -1,
       ],
     },
+    "isJsTracer": undefined,
     "isMainThread": false,
+    "isPrivateBrowsing": undefined,
+    "jsAllocations": undefined,
+    "jsTracer": undefined,
     "markers": Object {
       "category": Array [],
       "data": Array [],
@@ -3418,6 +2883,7 @@ CallTree {
       "startTime": Array [],
     },
     "name": "Thread with samples",
+    "nativeAllocations": undefined,
     "nativeSymbols": Object {
       "address": Array [],
       "functionSize": Array [],
@@ -3427,6 +2893,7 @@ CallTree {
     },
     "pausedRanges": Array [],
     "pid": "0",
+    "processName": undefined,
     "processShutdownTime": null,
     "processStartupTime": 0,
     "processType": "default",
@@ -3442,19 +2909,26 @@ CallTree {
       "eventDelay": Array [
         0,
         0,
+        0,
+        0,
       ],
-      "length": 2,
+      "length": 4,
       "stack": Array [
         6,
         6,
+        6,
+        8,
       ],
       "time": Array [
+        3,
         4,
         5,
+        6,
       ],
       "weight": null,
       "weightType": "samples",
     },
+    "showMarkersInTimeline": undefined,
     "stackTable": Object {
       "category": Array [
         0,
@@ -3502,7 +2976,7 @@ CallTree {
         0,
       ],
     },
-    "stringTable": UniqueStringArray {
+    "stringTable": StringTable {
       "_array": Array [
         "A",
         "B",
@@ -3528,6 +3002,7 @@ CallTree {
     },
     "tid": 0,
     "unregisterTime": null,
+    "userContextId": undefined,
   },
   "_weightType": "samples",
 }
@@ -3535,6 +3010,7 @@ CallTree {
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -3579,17 +3055,6 @@ Object {
       6,
       7,
       8,
-    ],
-    "implementation": Array [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
     ],
     "inlineDepth": Array [
       0,
@@ -3728,7 +3193,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -3739,6 +3208,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -3748,6 +3218,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -3782,6 +3253,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -3829,7 +3301,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -3855,6 +3327,7 @@ Object {
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 
@@ -3940,6 +3413,7 @@ Array [
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getPreviewFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -3984,17 +3458,6 @@ Object {
       6,
       7,
       8,
-    ],
-    "implementation": Array [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
     ],
     "inlineDepth": Array [
       0,
@@ -4133,7 +3596,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -4144,6 +3611,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -4153,6 +3621,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -4181,6 +3650,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -4228,7 +3698,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -4254,11 +3724,13 @@ Object {
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getRangeAndTransformFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -4303,17 +3775,6 @@ Object {
       6,
       7,
       8,
-    ],
-    "implementation": Array [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
     ],
     "inlineDepth": Array [
       0,
@@ -4452,7 +3913,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -4463,6 +3928,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -4472,6 +3938,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -4506,6 +3973,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -4553,7 +4021,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -4579,11 +4047,13 @@ Object {
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getRangeFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -4628,17 +4098,6 @@ Object {
       6,
       7,
       8,
-    ],
-    "implementation": Array [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
     ],
     "inlineDepth": Array [
       0,
@@ -4777,7 +4236,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -4788,6 +4251,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -4797,6 +4261,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -4831,6 +4296,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -4878,7 +4344,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -4904,11 +4370,13 @@ Object {
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 
 exports[`snapshots of selectors/profile matches the last stored run of selectedThreadSelector.getTabFilteredThread 1`] = `
 Object {
+  "eTLD+1": undefined,
   "frameTable": Object {
     "address": Array [
       -1,
@@ -4953,17 +4421,6 @@ Object {
       6,
       7,
       8,
-    ],
-    "implementation": Array [
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
     ],
     "inlineDepth": Array [
       0,
@@ -5102,7 +4559,11 @@ Object {
       -1,
     ],
   },
+  "isJsTracer": undefined,
   "isMainThread": false,
+  "isPrivateBrowsing": undefined,
+  "jsAllocations": undefined,
+  "jsTracer": undefined,
   "markers": Object {
     "category": Array [],
     "data": Array [],
@@ -5113,6 +4574,7 @@ Object {
     "startTime": Array [],
   },
   "name": "Thread with samples",
+  "nativeAllocations": undefined,
   "nativeSymbols": Object {
     "address": Array [],
     "functionSize": Array [],
@@ -5122,6 +4584,7 @@ Object {
   },
   "pausedRanges": Array [],
   "pid": "0",
+  "processName": undefined,
   "processShutdownTime": null,
   "processStartupTime": 0,
   "processType": "default",
@@ -5194,6 +4657,7 @@ Object {
       0,
     ],
     "length": 57,
+    "responsiveness": undefined,
     "stack": Array [
       null,
       null,
@@ -5253,6 +4717,8 @@ Object {
       null,
       null,
     ],
+    "threadCPURatio": undefined,
+    "threadId": undefined,
     "time": Array [
       0,
       1,
@@ -5315,6 +4781,7 @@ Object {
     "weight": null,
     "weightType": "samples",
   },
+  "showMarkersInTimeline": undefined,
   "stackTable": Object {
     "category": Array [
       0,
@@ -5362,7 +4829,7 @@ Object {
       0,
     ],
   },
-  "stringTable": UniqueStringArray {
+  "stringTable": StringTable {
     "_array": Array [
       "A",
       "B",
@@ -5373,6 +4840,7 @@ Object {
       "G",
       "H",
       "I",
+      "CompositorScreenshot",
     ],
     "_stringToIndex": Map {
       "A" => 0,
@@ -5384,10 +4852,12 @@ Object {
       "G" => 6,
       "H" => 7,
       "I" => 8,
+      "CompositorScreenshot" => 9,
     },
   },
   "tid": 0,
   "unregisterTime": null,
+  "userContextId": undefined,
 }
 `;
 

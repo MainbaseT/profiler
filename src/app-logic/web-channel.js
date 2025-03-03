@@ -8,6 +8,7 @@ import type {
   Milliseconds,
   MixedObject,
   ExternalMarkersData,
+  FaviconData,
 } from 'firefox-profiler/types';
 
 /**
@@ -27,7 +28,9 @@ export type Request =
   | GetExternalMarkersRequest
   | GetExternalPowerTracksRequest
   | GetSymbolTableRequest
-  | QuerySymbolicationApiRequest;
+  | QuerySymbolicationApiRequest
+  | GetPageFaviconsRequest
+  | OpenScriptInTabDebuggerRequest;
 
 type StatusQueryRequest = {| type: 'STATUS_QUERY' |};
 type EnableMenuButtonRequest = {| type: 'ENABLE_MENU_BUTTON' |};
@@ -51,6 +54,17 @@ type QuerySymbolicationApiRequest = {|
   type: 'QUERY_SYMBOLICATION_API',
   path: string,
   requestJson: string,
+|};
+type GetPageFaviconsRequest = {|
+  type: 'GET_PAGE_FAVICONS',
+  pageUrls: Array<string>,
+|};
+type OpenScriptInTabDebuggerRequest = {|
+  type: 'OPEN_SCRIPT_IN_DEBUGGER',
+  tabId: number,
+  scriptUrl: string,
+  line: number | null,
+  column: number | null,
 |};
 
 export type MessageFromBrowser<R: ResponseFromBrowser> =
@@ -82,7 +96,9 @@ export type ResponseFromBrowser =
   | GetExternalMarkersResponse
   | GetExternalPowerTracksResponse
   | GetSymbolTableResponse
-  | QuerySymbolicationApiResponse;
+  | QuerySymbolicationApiResponse
+  | GetPageFaviconsResponse
+  | OpenScriptInTabDebuggerResponse;
 
 type StatusQueryResponse = {|
   menuButtonIsEnabled: boolean,
@@ -106,6 +122,14 @@ type StatusQueryResponse = {|
   //   Shipped in Firefox 125.
   //   Adds support for the following message types:
   //    - GET_EXTERNAL_MARKERS
+  // Version 4:
+  //   Shipped in Firefox 134.
+  //   Adds support for the following message types:
+  //    - GET_PAGE_FAVICONS
+  // Version 5:
+  //  Shipped in Firefox 136.
+  //  Adds support for showing the JS script in DevTools debugger.
+  //    - OPEN_SCRIPT_IN_DEBUGGER
   version?: number,
 |};
 type EnableMenuButtonResponse = void;
@@ -114,6 +138,8 @@ type GetExternalMarkersResponse = ExternalMarkersData;
 type GetExternalPowerTracksResponse = MixedObject[];
 type GetSymbolTableResponse = SymbolTableAsTuple;
 type QuerySymbolicationApiResponse = string;
+type GetPageFaviconsResponse = Array<FaviconData | null>;
+type OpenScriptInTabDebuggerResponse = void;
 
 // Manually declare all pairs of request + response for Flow.
 /* eslint-disable no-redeclare */
@@ -138,6 +164,12 @@ declare function _sendMessageWithResponse(
 declare function _sendMessageWithResponse(
   QuerySymbolicationApiRequest
 ): Promise<QuerySymbolicationApiResponse>;
+declare function _sendMessageWithResponse(
+  GetPageFaviconsRequest
+): Promise<GetPageFaviconsResponse>;
+declare function _sendMessageWithResponse(
+  OpenScriptInTabDebuggerRequest
+): Promise<OpenScriptInTabDebuggerResponse>;
 /* eslint-enable no-redeclare */
 
 /**
@@ -223,6 +255,30 @@ export async function querySymbolicationApiViaWebChannel(
     type: 'QUERY_SYMBOLICATION_API',
     path,
     requestJson,
+  });
+}
+
+export async function getPageFaviconsViaWebChannel(
+  pageUrls: Array<string>
+): Promise<GetPageFaviconsResponse> {
+  return _sendMessageWithResponse({
+    type: 'GET_PAGE_FAVICONS',
+    pageUrls,
+  });
+}
+
+export async function showFunctionInDevtoolsViaWebChannel(
+  tabId: number,
+  scriptUrl: string,
+  line: number | null,
+  column: number | null
+): Promise<void> {
+  return _sendMessageWithResponse({
+    type: 'OPEN_SCRIPT_IN_DEBUGGER',
+    tabId,
+    scriptUrl,
+    line,
+    column,
   });
 }
 

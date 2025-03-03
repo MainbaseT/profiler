@@ -6,7 +6,6 @@
 import { createSelector } from 'reselect';
 import { ensureExists, getFirstItemFromSet } from '../utils/flow';
 import { urlFromState } from '../app-logic/url-handling';
-import * as CommittedRanges from '../profile-logic/committed-ranges';
 import { getThreadsKey } from '../profile-logic/profile-data';
 import { stringsToMarkerRegExps } from '../profile-logic/marker-data';
 import { getProfileNameFromZipPath } from 'firefox-profiler/profile-logic/zip-files';
@@ -34,6 +33,7 @@ import type {
   FullProfileSpecificUrlState,
   ActiveTabSpecificProfileUrlState,
   NativeSymbolInfo,
+  TabID,
 } from 'firefox-profiler/types';
 
 import type { TabSlug } from '../app-logic/tabs-handling';
@@ -154,6 +154,10 @@ export const getHiddenLocalTracksByPid: Selector<Map<Pid, Set<TrackIndex>>> = (
 export const getLocalTrackOrderByPid: Selector<Map<Pid, TrackIndex[]>> = (
   state
 ) => getFullProfileSpecificState(state).localTrackOrderByPid;
+export const getTabFilter: Selector<TabID | null> = (state) =>
+  getFullProfileSpecificState(state).tabFilter;
+export const hasTabFilter: Selector<boolean> = (state) =>
+  getTabFilter(state) !== null;
 
 /**
  * This selector does a simple lookup in the set of hidden tracks for a PID, and ensures
@@ -323,15 +327,6 @@ export const getProfileNameForStorage: Selector<string> = createSelector(
     // Finally, return a blank string.
     return '';
   }
-);
-
-/**
- * This selector transforms the committed ranges into a list of labels that can
- * be displayed in the UI.
- */
-export const getCommittedRangeLabels: Selector<string[]> = createSelector(
-  getAllCommittedRanges,
-  CommittedRanges.getCommittedRangeLabels
 );
 
 function _shouldAllowSymbolServerUrl(symbolServerUrl) {
