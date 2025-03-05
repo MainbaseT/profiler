@@ -30,6 +30,7 @@ AppHeader--github-icon =
 ## AppViewRouter
 ## This is used for displaying errors when loading the application.
 
+AppViewRouter--error-from-post-message = Не вдалося імпортувати профіль.
 AppViewRouter--error-unpublished = Не вдалося відновити профіль із { -firefox-brand-name }.
 AppViewRouter--error-from-file = Не вдалося прочитати файл або проаналізувати профіль у ньому.
 AppViewRouter--error-local = Ще не впроваджено.
@@ -120,6 +121,7 @@ CallNodeContextMenu--searchfox = Шукати назву функції у Searc
 CallNodeContextMenu--copy-function-name = Скопіювати назву функції
 CallNodeContextMenu--copy-script-url = Скопіювати URL-адресу скрипту
 CallNodeContextMenu--copy-stack = Копіювати стек
+CallNodeContextMenu--show-the-function-in-devtools = Показати функцію в інструментах розробника
 
 ## CallTree
 ## This is the component for Call Tree panel.
@@ -337,6 +339,15 @@ Home--load-files-from-other-tools2 =
     Панель швидкодії Chrome, <androidstudio>Android Studio</androidstudio>, або
     з будь-якого файлу в форматі <dhat>dhat</dhat> чи <traceevent>Google’s Trace Event</traceevent>.
     <write>Навчіться записувати власний імпортер</write>.
+Home--install-chrome-extension = Встановіть розширення Chrome
+Home--chrome-extension-instructions =
+    Використовуйте розширення <a>{ -profiler-brand-name } для Chrome</a>
+    для фіксації профілів продуктивності в Chrome та їх аналізу в
+    { -profiler-brand-name }. Установіть розширення з вебмагазину Chrome.
+Home--chrome-extension-recording-instructions =
+    Після встановлення використовуйте піктограму розширення на панелі інструментів
+    або ярлики для запуску та зупинки профілювання. Ви також можете
+    експортувати профілі та завантажити їх тут для детального аналізу.
 
 ## IdleSearchField
 ## The component that is used for all the search inputs in the application.
@@ -629,6 +640,14 @@ NumberFormat--short-date = { SHORTDATE($date) }
 
 PanelSearch--search-field-hint = Чи знаєте ви, що для пошуку кількох термінів можна використовувати кому (,)?
 
+## Profile Name Button
+
+ProfileName--edit-profile-name-button =
+    .title = Змінити назву профілю
+ProfileName--edit-profile-name-input =
+    .title = Змінити назву профілю
+    .aria-label = Назва профілю
+
 ## Profile Delete Button
 
 # This string is used on the tooltip of the published profile links delete button in uploaded recordings page.
@@ -676,6 +695,7 @@ ProfileFilterNavigator--full-range-with-duration = Повний діапазон
 
 ## Profile Loader Animation
 
+ProfileLoaderAnimation--loading-from-post-message = Імпорт та обробка профілю…
 ProfileLoaderAnimation--loading-unpublished = Імпортування профілю безпосередньо з { -firefox-brand-name }…
 ProfileLoaderAnimation--loading-from-file = Читання файлу та обробка профілю…
 ProfileLoaderAnimation--loading-local = Ще не впроваджено.
@@ -751,6 +771,13 @@ TabBar--marker-table-tab = Маркерна таблиця
 TabBar--network-tab = Мережа
 TabBar--js-tracer-tab = JS Tracer
 
+## TabSelectorMenu
+## This component is a context menu that's opened when you click on the root
+## range at the top left corner for profiler analysis view. It's used to switch
+## between tabs that were captured in the profile.
+
+TabSelectorMenu--all-tabs-and-windows = Усі вкладки та вікна
+
 ## TrackContextMenu
 ## This is used as a context menu for timeline to organize the tracks in the
 ## analysis UI.
@@ -767,6 +794,10 @@ TrackContextMenu--hide-other-screenshots-tracks = Сховати доріжки 
 TrackContextMenu--hide-track = Сховати “{ $trackName }”
 TrackContextMenu--show-all-tracks = Показати всі доріжки
 TrackContextMenu--show-local-tracks-in-process = Показати всі доріжки в цьому процесі
+# This is used as the context menu item to hide all tracks of the selected track's type.
+# Variables:
+#   $type (String) - Name of the type of selected track to hide.
+TrackContextMenu--hide-all-tracks-by-selected-track-type = Приховати всі доріжки типу “{ $type }”
 # This is used in the tracks context menu as a button to show all the tracks
 # that match the search filter.
 TrackContextMenu--show-all-matching-tracks = Показати всі відповідні доріжки

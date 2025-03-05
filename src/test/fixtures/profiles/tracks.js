@@ -19,6 +19,7 @@ import type {
   Pid,
 } from 'firefox-profiler/types';
 
+import { StringTable } from '../../../utils/string-table';
 import { assertExhaustiveCheck } from '../../../utils/flow';
 import {
   getFriendlyThreadName,
@@ -119,6 +120,8 @@ export function getHumanReadableTracks(state: State): string[] {
           trackName = profileViewSelectors
             .getCounterSelectors(track.counterIndex)
             .getCounter(state).name;
+        } else if (track.type === 'marker') {
+          trackName = threads[track.threadIndex].stringArray[track.markerName];
         } else {
           trackName = threads[track.threadIndex].name;
         }
@@ -170,8 +173,9 @@ export function getProfileWithNiceTracks(): Profile {
     category: 'Paint',
   });
   thread2.markers.category.push(0);
+  const thread2StringTable = StringTable.withBackingArray(thread2.stringArray);
   thread2.markers.name.push(
-    thread2.stringTable.indexForString('RefreshDriverTick')
+    thread2StringTable.indexForString('RefreshDriverTick')
   );
   thread2.markers.startTime.push(0);
   thread2.markers.endTime.push(null);
@@ -180,9 +184,11 @@ export function getProfileWithNiceTracks(): Profile {
 
   thread3.name = 'DOM Worker';
   thread3.pid = '222';
+  thread3.processType = 'tab';
   thread3.tid = 33;
 
   thread4.name = 'Style';
+  thread4.processType = 'tab';
   thread4.pid = '222';
   thread4.tid = 44;
   return profile;

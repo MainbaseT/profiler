@@ -11,8 +11,10 @@ import {
   getSymbolTableViaWebChannel,
   queryWebChannelVersionViaWebChannel,
   querySymbolicationApiViaWebChannel,
+  getPageFaviconsViaWebChannel,
+  showFunctionInDevtoolsViaWebChannel,
 } from './web-channel';
-import type { Milliseconds } from 'firefox-profiler/types';
+import type { Milliseconds, FaviconData } from 'firefox-profiler/types';
 
 /**
  * This file manages the communication between the profiler and the browser.
@@ -68,6 +70,15 @@ export interface BrowserConnection {
     debugName: string,
     breakpadId: string
   ): Promise<SymbolTableAsTuple>;
+
+  getPageFavicons(pageUrls: Array<string>): Promise<Array<FaviconData | null>>;
+
+  showFunctionInDevtools(
+    tabID: number,
+    scriptUrl: string,
+    line: number | null,
+    column: number | null
+  ): Promise<void>;
 }
 
 /**
@@ -81,12 +92,16 @@ class BrowserConnectionImpl implements BrowserConnection {
   _webChannelSupportsGetProfileAndSymbolication: boolean;
   _webChannelSupportsGetExternalPowerTracks: boolean;
   _webChannelSupportsGetExternalMarkers: boolean;
+  _webChannelSupportsGetPageFavicons: boolean;
+  _webChannelSupportsOpenDebuggerInTab: boolean;
   _geckoProfiler: $GeckoProfiler | void;
 
   constructor(webChannelVersion: number) {
     this._webChannelSupportsGetProfileAndSymbolication = webChannelVersion >= 1;
     this._webChannelSupportsGetExternalPowerTracks = webChannelVersion >= 2;
     this._webChannelSupportsGetExternalMarkers = webChannelVersion >= 3;
+    this._webChannelSupportsGetPageFavicons = webChannelVersion >= 4;
+    this._webChannelSupportsOpenDebuggerInTab = webChannelVersion >= 5;
   }
 
   // Only called when we must obtain the profile from the browser, i.e. if we
@@ -158,6 +173,21 @@ class BrowserConnectionImpl implements BrowserConnection {
     return querySymbolicationApiViaWebChannel(path, requestJson);
   }
 
+  async showFunctionInDevtools(
+    tabID: number,
+    scriptUrl: string,
+    line: number | null,
+    column: number | null
+  ): Promise<void> {
+    if (!this._webChannelSupportsOpenDebuggerInTab) {
+      throw new Error(
+        "Can't use showFunctionInDevtools in Firefox versions with the old WebChannel."
+      );
+    }
+
+    return showFunctionInDevtoolsViaWebChannel(tabID, scriptUrl, line, column);
+  }
+
   async getSymbolTable(
     debugName: string,
     breakpadId: string
@@ -181,10 +211,32 @@ class BrowserConnectionImpl implements BrowserConnection {
       'Cannot obtain a symbol table: have neither WebChannel nor a GeckoProfiler object'
     );
   }
+
+  async getPageFavicons(
+    pageUrls: Array<string>
+  ): Promise<Array<FaviconData | null>> {
+    // This is added in Firefox 134.
+    if (this._webChannelSupportsGetPageFavicons) {
+      return getPageFaviconsViaWebChannel(pageUrls);
+    }
+
+    return [];
+  }
 }
 
+// Should work with:
+// Firefox Desktop: "Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0"
+// Thunderbird: "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Thunderbird/128.2.3"
+// Firefox Android: "Mozilla/5.0 (Android 12; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0"
+// Should not work with:
+// Chrome: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+// Safari: 'Mozilla/5.0 (iPhone; CPU iPhone OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1'
+//
+// We could match for Gecko/ but do all Gecko-based browsers support the
+// WebChannel? Probably not. Therefore specifically Firefox and Thunderbird are
+// looked for, until we find that we need a broader net.
 function _isFirefox(userAgent: string): boolean {
-  return Boolean(userAgent.match(/Firefox\/\d+\.\d+/));
+  return userAgent.includes('Firefox/') || userAgent.includes('Thunderbird/');
 }
 
 class TimeoutError extends Error {

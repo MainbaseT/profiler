@@ -14,6 +14,7 @@ import {
 } from 'firefox-profiler/test/fixtures/testing-library';
 import { Root } from '../../components/app/Root';
 import { autoMockCanvasContext } from '../fixtures/mocks/canvas-context';
+import { fireFullClick } from '../fixtures/utils';
 import { getProfileUrlForHash } from '../../actions/receive-profile';
 import { blankStore } from '../fixtures/stores';
 import { getProfileFromTextSamples } from '../fixtures/profiles/processed-profile';
@@ -22,9 +23,8 @@ import {
   resetHistoryWithUrl,
 } from '../fixtures/mocks/window-navigation';
 import { autoMockIntersectionObserver } from '../fixtures/mocks/intersection-observer';
-import { makeProfileSerializable } from '../../profile-logic/process-profile';
 
-import type { SerializableProfile } from 'firefox-profiler/types';
+import type { Profile } from 'firefox-profiler/types';
 
 // ListOfPublishedProfiles depends on IDB and renders asynchronously, so we'll
 // just test we want to render it, but otherwise test it more fully in a
@@ -60,9 +60,7 @@ describe('Root with history', function () {
       );
 
       // Ensure this is a properly serialized profile.
-      const profile = makeProfileSerializable(
-        getProfileFromTextSamples('A  B  C  D  E').profile
-      );
+      const profile = getProfileFromTextSamples('A  B  C  D  E').profile;
       mockFetchProfileAtUrl(getProfileUrlForHash('FAKEHASH'), profile);
     } else {
       throw new Error(
@@ -130,7 +128,7 @@ describe('Root with history', function () {
       name: 'Marker Chart',
       selected: false,
     });
-    markerChart.click();
+    fireFullClick(markerChart);
 
     await waitForTab({ name: 'Call Tree', selected: false });
     await waitForTab({ name: 'Marker Chart', selected: true });
@@ -168,7 +166,7 @@ describe('Root with history', function () {
       name: 'Marker Chart',
       selected: false,
     });
-    markerChart.click();
+    fireFullClick(markerChart);
 
     await waitForTab({ name: 'Call Tree', selected: false });
     await waitForTab({ name: 'Marker Chart', selected: true });
@@ -189,10 +187,7 @@ describe('Root with history', function () {
   });
 });
 
-function mockFetchProfileAtUrl(
-  url: string,
-  profile: SerializableProfile
-): void {
+function mockFetchProfileAtUrl(url: string, profile: Profile): void {
   window.fetch
     .catch(404) // catchall
     .get(url, profile);

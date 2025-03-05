@@ -41,7 +41,6 @@ import { SymbolsNotFoundError } from '../../profile-logic/errors';
 import { createGeckoProfile } from '../fixtures/profiles/gecko-profile';
 import { blankStore, storeWithProfile } from '../fixtures/stores';
 import {
-  makeProfileSerializable,
   processGeckoProfile,
   serializeProfile,
 } from '../../profile-logic/process-profile';
@@ -57,10 +56,11 @@ import {
   getProfileWithNiceTracks,
 } from '../fixtures/profiles/tracks';
 import { waitUntilState } from '../fixtures/utils';
+import { dataUrlToBytes } from 'firefox-profiler/utils/base64';
 
 import { compress } from '../../utils/gz';
 
-import type { Profile } from 'firefox-profiler/types';
+import type { Profile, FaviconData } from 'firefox-profiler/types';
 
 // Mocking SymbolStoreDB. By default the functions will return undefined, which
 // will make the symbolication move forward with some bogus information.
@@ -180,7 +180,7 @@ describe('actions/receive-profile', function () {
 
       workThread.name = 'Work Thread';
       idleThread.name = 'Idle Thread';
-      idleThread.stackTable.category = idleThread.stackTable.category.map(
+      idleThread.frameTable.category = idleThread.frameTable.category.map(
         () => idleCategoryIndex
       );
       return { profile, idleThread, workThread };
@@ -848,14 +848,27 @@ describe('actions/receive-profile', function () {
       };
     }
 
-    function setupWithWebChannel(profileAs: string = 'json') {
+    function setupWithWebChannel(
+      profileAs: string = 'json',
+      faviconsGetter?: () => Promise<Array<FaviconData | null>>
+    ) {
       const { store, profileGetter } = _setup(profileAs);
-      const webChannel = simulateWebChannel(profileGetter);
+      const webChannel = simulateWebChannel(profileGetter, faviconsGetter);
+
+      const waitUntilFavicons = () =>
+        waitUntilState(store, (state) => {
+          const pages = ProfileViewSelectors.getPageList(state);
+          if (!pages) {
+            return false;
+          }
+          return pages.some((page) => page.favicon);
+        });
 
       return {
         store,
         ...store,
         ...webChannel,
+        waitUntilFavicons,
       };
     }
 
@@ -928,6 +941,39 @@ describe('actions/receive-profile', function () {
         })
       );
     });
+
+    it('gets the favicons for the received profile using webchannel', async () => {
+      // For some reason fetch-mock-jest removes the `data:` protocol.
+      const mockDataUrl = 'image/png,test';
+      window.fetch.get('image/png,test', {
+        arrayBuffer: () => {
+          return new Uint8Array([1, 2, 3, 4, 5, 6]).buffer;
+        },
+      });
+
+      // Create a simple urls getter for the pages.
+      const faviconsGetter = async (): Promise<Array<FaviconData | null>> => {
+        return [
+          {
+            data: await dataUrlToBytes('data:' + mockDataUrl),
+            mimeType: 'image/png',
+          },
+          null,
+          null,
+        ];
+      };
+      const { dispatch, waitUntilFavicons } = setupWithWebChannel(
+        'json',
+        faviconsGetter
+      );
+
+      const browserConnectionStatus =
+        await createBrowserConnection('Firefox/134.0');
+      await dispatch(retrieveProfileFromBrowser(browserConnectionStatus));
+
+      // It should successfully get the favicons the profiles that are loaded from the browser.
+      return expect(waitUntilFavicons()).resolves.toBe(undefined);
+    });
   });
 
   describe('retrieveProfileFromStore', function () {
@@ -945,10 +991,7 @@ describe('actions/receive-profile', function () {
       const hash = 'c5e53f9ab6aecef926d4be68c84f2de550e2ac2f';
       const expectedUrl = `https://storage.googleapis.com/profile-store/${hash}`;
 
-      window.fetch.get(
-        expectedUrl,
-        makeProfileSerializable(_getSimpleProfile())
-      );
+      window.fetch.get(expectedUrl, _getSimpleProfile());
 
       const store = blankStore();
       await store.dispatch(retrieveProfileFromStore(hash));
@@ -970,7 +1013,7 @@ describe('actions/receive-profile', function () {
       window.fetch
         .get(
           'https://storage.googleapis.com/profile-store/FAKEHASH',
-          makeProfileSerializable(unsymbolicatedProfile)
+          unsymbolicatedProfile
         )
         .post('https://symbolication.services.mozilla.com/symbolicate/v5', {});
 
@@ -1005,7 +1048,7 @@ describe('actions/receive-profile', function () {
       const expectedUrl = `https://storage.googleapis.com/profile-store/${hash}`;
       window.fetch
         .getOnce(expectedUrl, 403)
-        .get(expectedUrl, makeProfileSerializable(_getSimpleProfile()), {
+        .get(expectedUrl, _getSimpleProfile(), {
           overwriteRoutes: false,
         });
 
@@ -1092,10 +1135,7 @@ describe('actions/receive-profile', function () {
 
     it('can retrieve a profile from the web and save it to state', async function () {
       const expectedUrl = 'https://profiles.club/shared.json';
-      window.fetch.get(
-        expectedUrl,
-        makeProfileSerializable(_getSimpleProfile())
-      );
+      window.fetch.get(expectedUrl, _getSimpleProfile());
 
       const store = blankStore();
       await store.dispatch(retrieveProfileOrZipFromUrl(expectedUrl));
@@ -1133,7 +1173,7 @@ describe('actions/receive-profile', function () {
       // The first call will still be a 403 -- remember, it's the default return value.
       window.fetch
         .getOnce(expectedUrl, 403)
-        .get(expectedUrl, makeProfileSerializable(_getSimpleProfile()), {
+        .get(expectedUrl, _getSimpleProfile(), {
           overwriteRoutes: false,
         });
 
@@ -1512,7 +1552,7 @@ describe('actions/receive-profile', function () {
 
       const { getState, view } = await setupTestWithFile({
         type: '',
-        payload: compress(serializeProfile(profile)),
+        payload: (await compress(serializeProfile(profile))).buffer,
       });
       expect(view.phase).toBe('DATA_LOADED');
       expect(ProfileViewSelectors.getProfile(getState()).meta.product).toEqual(
@@ -1544,7 +1584,7 @@ describe('actions/receive-profile', function () {
 
       const { getState, view } = await setupTestWithFile({
         type: 'application/gzip',
-        payload: compress(serializeProfile(profile)),
+        payload: (await compress(serializeProfile(profile))).buffer,
       });
       expect(view.phase).toBe('DATA_LOADED');
       expect(ProfileViewSelectors.getProfile(getState()).meta.product).toEqual(
@@ -1558,7 +1598,7 @@ describe('actions/receive-profile', function () {
 
       const { getState, view } = await setupTestWithFile({
         type: 'application/json',
-        payload: compress(serializeProfile(profile)),
+        payload: (await compress(serializeProfile(profile))).buffer,
       });
       expect(view.phase).toBe('DATA_LOADED');
       expect(ProfileViewSelectors.getProfile(getState()).meta.product).toEqual(
@@ -1572,7 +1612,7 @@ describe('actions/receive-profile', function () {
         .mockImplementation(() => {});
       const { view } = await setupTestWithFile({
         type: 'application/gzip',
-        payload: compress('{}'),
+        payload: (await compress('{}')).buffer,
       });
       expect(view.phase).toBe('FATAL_ERROR');
 
@@ -1780,11 +1820,9 @@ describe('actions/receive-profile', function () {
           ])
         );
       }
-      window.fetch
-        .getOnce('*', makeProfileSerializable(profile1))
-        .getOnce('*', makeProfileSerializable(profile2), {
-          overwriteRoutes: false,
-        });
+      window.fetch.getOnce('*', profile1).getOnce('*', profile2, {
+        overwriteRoutes: false,
+      });
 
       const { dispatch, getState } = blankStore();
       await dispatch(retrieveProfilesToCompare([url1, url2]));
@@ -2063,7 +2101,7 @@ describe('actions/receive-profile', function () {
       // Add mock fetch response for the required number of times.
       // Usually it's 1 but it can be also 2 for `compare` dataSource.
       for (let i = 0; i < requiredProfile; i++) {
-        window.fetch.getOnce('*', makeProfileSerializable(profile), {
+        window.fetch.getOnce('*', profile, {
           overwriteRoutes: false,
         });
       }

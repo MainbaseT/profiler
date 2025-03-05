@@ -16,16 +16,19 @@ import {
   getNetworkMarkers,
 } from '../fixtures/profiles/processed-profile';
 import { ensureExists } from '../../utils/flow';
-import type { RemoveProfileInformation } from 'firefox-profiler/types';
 import {
   correlateIPCMarkers,
   deriveMarkersFromRawMarkerTable,
 } from '../../profile-logic/marker-data';
-import { getTimeRangeForThread } from '../../profile-logic/profile-data';
+import {
+  getTimeRangeForThread,
+  computeTimeColumnForRawSamplesTable,
+} from '../../profile-logic/profile-data';
 import {
   callTreeFromProfile,
   formatTree,
 } from 'firefox-profiler/test/fixtures/utils';
+import type { RemoveProfileInformation } from 'firefox-profiler/types';
 
 describe('sanitizePII', function () {
   function setup(
@@ -58,7 +61,7 @@ describe('sanitizePII', function () {
         );
         return deriveMarkersFromRawMarkerTable(
           thread.markers,
-          thread.stringTable,
+          thread.stringArray,
           thread.tid || 0,
           timeRangeForThread,
           ipcCorrelations
@@ -70,7 +73,7 @@ describe('sanitizePII', function () {
       FileIO: {
         name: 'FileIO',
         display: ['marker-chart', 'marker-table', 'timeline-fileio'],
-        data: [
+        fields: [
           {
             key: 'operation',
             label: 'Operation',
@@ -101,10 +104,31 @@ describe('sanitizePII', function () {
         name: 'Url',
         tableLabel: '{marker.name} - {marker.data.url}',
         display: ['marker-chart', 'marker-table'],
-        data: [
+        fields: [
           {
             key: 'url',
             format: 'url',
+          },
+        ],
+      },
+      HostResolver: {
+        name: 'HostResolver',
+        tableLabel: '{marker.name} - {marker.data.host}',
+        display: ['marker-chart', 'marker-table'],
+        fields: [
+          {
+            key: 'host',
+            format: 'sanitized-string',
+            searchable: true,
+          },
+          {
+            key: 'originSuffix',
+            format: 'sanitized-string',
+            searchable: true,
+          },
+          {
+            key: 'flags',
+            format: 'string',
           },
         ],
       },
@@ -217,7 +241,9 @@ describe('sanitizePII', function () {
     const counterSamples = ensureExists(sanitizedProfile.counters)[0].samples;
 
     // Make sure that all the table fields are consistent.
-    expect(counterSamples.time).toHaveLength(counterSamples.length);
+    const counterSampleTimes =
+      computeTimeColumnForRawSamplesTable(counterSamples);
+    expect(counterSampleTimes).toHaveLength(counterSamples.length);
     expect(counterSamples.count).toHaveLength(counterSamples.length);
     expect(counterSamples.number).toHaveLength(counterSamples.length);
 
@@ -229,10 +255,10 @@ describe('sanitizePII', function () {
     ) {
       // We are using inclusive range, so we need to add 1 and subtract 1 to the
       // start and end ranges.
-      expect(counterSamples.time[sampleIndex]).toBeGreaterThanOrEqual(
+      expect(counterSampleTimes[sampleIndex]).toBeGreaterThanOrEqual(
         sanitizedRange.start - 1
       );
-      expect(counterSamples.time[sampleIndex]).toBeLessThanOrEqual(
+      expect(counterSampleTimes[sampleIndex]).toBeLessThanOrEqual(
         sanitizedRange.end + 1
       );
     }
@@ -427,13 +453,39 @@ describe('sanitizePII', function () {
     expect(includesChromeUrl).toBe(true);
   });
 
+  it('should sanitize the favicons in the pages information', function () {
+    const profile = processGeckoProfile(createGeckoProfile());
+    // Add some favicons to check later
+    ensureExists(profile.pages)[1].favicon =
+      'data:image/png;base64,mock-base64-image-data';
+
+    const { originalProfile, sanitizedProfile } = setup(
+      { shouldRemoveUrls: true },
+      profile
+    );
+
+    // Checking to make sure that we have favicons in the original profile pages array.
+    const pageUrl = ensureExists(originalProfile.pages).find(
+      (page) => page.favicon
+    );
+    if (pageUrl === undefined) {
+      throw new Error(
+        "There should be a favicon in the 'pages' array in this profile."
+      );
+    }
+
+    for (const page of ensureExists(sanitizedProfile.pages)) {
+      expect(page.favicon).toBe(null);
+    }
+  });
+
   it('should sanitize all the URLs inside network markers', function () {
     const { sanitizedProfile } = setup({
       shouldRemoveUrls: true,
     });
 
     for (const thread of sanitizedProfile.threads) {
-      const stringArray = thread.stringTable.serializeToArray();
+      const stringArray = thread.stringArray;
       for (let i = 0; i < thread.markers.length; i++) {
         const currentMarker = thread.markers.data[i];
         if (
@@ -486,8 +538,7 @@ describe('sanitizePII', function () {
     });
 
     for (const thread of sanitizedProfile.threads) {
-      const stringArray = thread.stringTable.serializeToArray();
-      for (const string of stringArray) {
+      for (const string of thread.stringArray) {
         // We are keeping the http(s) and removing the rest.
         // That's why we can't test it with `includes('http')`.
         // Tested `.com` here since all of the test urls have .com in it
@@ -790,6 +841,42 @@ describe('sanitizePII', function () {
 
     // Now check the url fields and make sure they are sanitized.
     expect(marker.url).toBe('https://<URL>');
+  });
+
+  it('should sanitize the sanitized-string markers', function () {
+    const { sanitizedProfile } = setup(
+      {
+        shouldRemoveUrls: true,
+      },
+      getProfileWithMarkers([
+        [
+          'nsHostResolver::ResolveHost',
+          0,
+          1,
+          {
+            type: 'HostResolver',
+            host: 'domain.name',
+            originSuffix: '^other.domain',
+            flags: '0xf00ba4',
+          },
+        ],
+      ])
+    );
+    expect(sanitizedProfile.threads.length).toEqual(1);
+    const thread = sanitizedProfile.threads[0];
+    expect(thread.markers.length).toEqual(1);
+
+    const marker = thread.markers.data[0];
+
+    // The host fields should still be there
+    if (!marker || !marker.host) {
+      throw new Error('Failed to find host property in the payload');
+    }
+
+    // Now check the host fields and make sure they are sanitized.
+    expect(marker.host).toBe('<sanitized>');
+    expect(marker.originSuffix).toBe('<sanitized>');
+    expect(marker.flags).toBe('0xf00ba4');
   });
 
   it('should sanitize the eTLD+1 field if urls are supposed to be sanitized', function () {
@@ -1263,21 +1350,23 @@ describe('sanitizePII', function () {
       );
 
       const indexForGCMinor =
-        originalProfile.threads[0].stringTable.indexForString('GCMinor');
+        originalProfile.threads[0].stringArray.indexOf('GCMinor');
+      expect(indexForGCMinor).not.toBe(-1);
       expect(originalProfile.threads[0].markers.name).toContain(
         indexForGCMinor
       );
 
-      const indexForScreenshot =
-        originalProfile.threads[0].stringTable.indexForString(
-          'CompositorScreenshot'
-        );
+      const indexForScreenshot = originalProfile.threads[0].stringArray.indexOf(
+        'CompositorScreenshot'
+      );
+      expect(indexForScreenshot).not.toBe(-1);
       expect(originalProfile.threads[0].markers.name).toContain(
         indexForScreenshot
       );
 
       const indexForTextOnlyMarker =
-        originalProfile.threads[0].stringTable.indexForString('TextOnlyMarker');
+        originalProfile.threads[0].stringArray.indexOf('TextOnlyMarker');
+      expect(indexForTextOnlyMarker).not.toBe(-1);
       expect(originalProfile.threads[0].markers.name).toContain(
         indexForTextOnlyMarker
       );
