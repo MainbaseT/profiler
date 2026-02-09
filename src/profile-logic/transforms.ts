@@ -943,8 +943,7 @@ export function collapseResource(
   thread: Thread,
   resourceIndexToCollapse: IndexIntoResourceTable,
   collapsedFuncIndex: IndexIntoFuncTable,
-  implementation: ImplementationFilter,
-  _defaultCategory: IndexIntoCategoryList
+  implementation: ImplementationFilter
 ): Thread {
   // Strategy: remap all frames from the given resource to collapsedFuncIndex,
   // then delegate to collapseDirectRecursion to merge consecutive frames with
@@ -1816,7 +1815,6 @@ export function filterSamples(
 export function applyTransform(
   thread: Thread,
   transform: Transform,
-  defaultCategory: IndexIntoCategoryList,
   getMarker: (markerIndex: MarkerIndex) => Marker,
   markerIndexes: MarkerIndex[],
   markerSchemaByName: MarkerSchemaByName,
@@ -1856,8 +1854,7 @@ export function applyTransform(
         thread,
         transform.resourceIndex,
         transform.collapsedFuncIndex,
-        transform.implementation,
-        defaultCategory
+        transform.implementation
       );
     case 'collapse-direct-recursion':
       return collapseDirectRecursion(
